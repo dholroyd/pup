@@ -1,0 +1,386 @@
+module Pup
+module Parse
+
+grammar Pup
+
+  rule unit
+    statements
+    space*
+    eof {
+      def value
+	Unit.new(statements.value)
+      end
+    }
+  end
+
+  rule statements
+    space? statement
+    tail:( space_eol space* statement )* {
+      def value
+	Statements.new([statement.value] + tail.elements.map{|s| s.statement.value })
+      end
+    }
+  end
+
+  rule eof
+    !.
+  end
+
+  rule statement
+    if
+    / classdef
+    / methoddef
+    / expression
+  end
+
+  rule classdef
+    'class' white_noeol thename (white_noeol / !extends) e:extends? space_eol
+      s:statements? space
+    'end' {
+      def value
+	ClassDef.new(thename.value, e.elements ? e.value : nil, s.elements ? s.value : nil)
+      end
+    }
+  end
+
+  rule extends
+    '<' space? expression {
+      def value
+	expression.value
+      end
+    }
+  end
+
+  rule methoddef
+    'def' space thename white_noeol? m:method_params? space_eol
+      s:statements? space
+    'end' {
+      def value
+	MethodDef.new(thename.value, m.elements ? m.value : nil, s.elements ? s.statements.value : nil)
+      end
+    }
+  end
+
+  rule method_params
+    '(' param_list ')' {
+      def value
+	param_list.value
+      end
+    }
+  end
+
+  rule if
+    'if' space expression space_eol
+      white_noeol? ifbk:statements  space
+    elsebk:theelse?
+    'end' {
+      def value
+	IfStmt.new(expression.value, ifbk.value, elsebk.elements ? elsebk.value : nil)
+      end
+    }
+  end
+
+  rule theelse
+    'else' space statements space {
+      def value
+	statements.value
+      end
+    }
+  end
+
+  rule expression
+    assignment
+  end
+
+  rule assignment
+    left_hand_side white_noeol? assign_op space? assignment {
+      def value
+	AssignExpr.new(left_hand_side.value, assign_op.text_value.to_sym, assignment.value)
+      end
+    }
+    / conditional
+  end
+
+  rule assign_op
+    '='
+    / "+="
+    / "-="
+    / "*="
+    / "%="
+    / "^="
+    / "/="
+    / "~="
+    / "|="
+    / "&="
+    / "||="
+    / "&&="
+    / "<<="
+    / ">>="
+  end
+
+  rule left_hand_side
+    thename
+    (
+      '.' invoke
+      /
+      '[' expression ']'
+    )+
+    / thename
+  end
+
+  rule conditional
+    logical white_noeol? '?' space? vrai:assignment white_noeol? ':' space? faux:assignment
+    / logical
+  end
+
+  rule logical
+    left:bitwise white_noeol? logic_op space? right:logical {
+      def value
+	LogicExpr.new(left.value, logic_op.text_value.to_sym, right.value)
+      end
+    }
+    / bitwise
+  end
+
+  rule logic_op
+    '&&' / '||'
+  end
+
+  rule bitwise
+    left:equality white_noeol? bit_op space? right:bitwise {
+      def value
+	BitwiseExpr.new(left.value, bit_op.text_value.to_sym, right.value)
+      end
+    }
+    / equality
+  end
+
+  rule bit_op
+    '&' / '|' / '%' / '^'
+  end
+
+  rule equality
+    left:additive white_noeol? equality_op space? right:equality {
+      def value
+	EqualityExpr.new(left.value, equality_op.text_value.to_sym, right.value)
+      end
+    }
+    / additive
+  end
+
+  rule equality_op
+    '==' / '!='
+  end
+
+  rule additive
+    left:multitive white_noeol? add_op space? right:additive {
+      def value
+	AddExpr.new(left.value, add_op.text_value.to_sym, right.value)
+      end
+    }
+    / multitive
+  end
+
+  rule add_op
+    '+' / '-'
+  end
+
+  rule multitive
+    left:lookup white_noeol? mult_op space? right:multitive {
+      def value
+	MulExpr.new(left.value, mult_op.text_value.to_sym, right.value)
+      end
+    }
+    / lookup
+  end
+
+  rule mult_op
+    '*'
+    / '/'
+  end
+
+  rule lookup
+    head:primary
+    tail:(
+      '.' invoke
+      /
+      '[' expression ']'
+    )+ {
+      def value
+	tail.elements.map{|e| e.elements[1] }.inject(head.value) do |receiver, subexp|
+	  v = subexp.value
+	  v.receiver = receiver
+	  v
+	end
+      end
+    }
+    / primary
+  end
+
+  rule primary
+    parenthesis
+#    / unary
+    / number
+    / quoted_string
+    / invoke
+  end
+
+  rule parenthesis
+    '(' expression ')' {
+      def value
+	expression.value
+      end
+    }
+  end
+
+  rule unary
+    logical_not
+    / bit_not
+  end
+
+  rule logical_not
+    '!' white_noeol? primary {
+      def value
+	LogicNotExpr.new(primary.value)
+      end
+    }
+  end
+
+  rule bit_not
+    '~' white_noeol? primary {
+      def value
+	BitNotExpr.new(primary.value)
+      end
+    }
+  end
+
+  rule invoke
+    n:thename white_noeol? a:args? white_noeol? b:block? {
+      def value
+	VarOrInvokeExpr.new(n.value, a.elements ? a.value : nil, b.elements ? b.value : nil)
+      end
+    }
+  end
+
+  rule args
+    parenthesised_args
+    / unparenthesised_args
+  end
+
+  rule parenthesised_args
+    '(' list:( expression (',' expression)* )?  ')' {
+      def value
+	if list.elements
+	  v = [list.elements[0].value]
+	  v += list.elements[1].elements.map{|m| m.expression.value } if list.elements[1]
+	  v
+	else
+	  []
+	end
+      end
+    }
+  end
+  rule unparenthesised_args
+    # TODO: disallow paren-expr as first expression,
+    expression tail:( white_noeol? ',' space? expression )* {
+      def value
+	[expression.value] + tail.elements.map{|m| m.expression.value}
+      end
+    }
+  end
+
+  rule block
+    '{' space? p:block_params? s:statements? '}' {
+      def value
+	Block.new(p.elements ? p.value : nil, s.elements ? s.value : nil)
+      end
+    }
+  end
+
+  rule block_params
+    '|' param_list '|' {
+      def value
+	param_list.value
+      end
+    }
+  end
+
+  rule param_list
+    param list:( ',' space? param )* {
+      def value
+	[param.value] + list.elements.map{|p| p.param.value }
+      end
+    }
+  end
+
+  rule param
+    thename ( '=' expression )? {
+      def value
+	Param.new(thename.value, elements[1].elements ? elements[1].elements[1].value : nil)
+      end
+    }
+  end
+
+  rule number
+    [1-9] [0-9]* {
+      def value
+	IntLiteral.new(text_value)
+      end
+    }
+  end
+
+  rule quoted_string
+    single_quoted_string / double_quoted_string
+  end
+
+  rule thename
+    !"end"
+    !"else"
+    # TODO seperate @att rule from other names; allow syntactic differentiation
+    '@'? [A-Za-z_] [A-Za-z_0-9]* {
+      def value
+	NameExpr.new(text_value)
+      end
+    }
+  end
+
+  #rule end_keyword
+  #  'end' !(!' ' .)
+  #end
+
+  rule double_quoted_string
+    '"' string:(!'"' ("\\\\" / '\"' / .))* '"' {
+      def value
+	StringLiteral.new(text_value)
+      end
+    }
+  end
+
+  rule single_quoted_string
+    "'" string:(!"'" ("\\\\" / "\\'" / .))* "'"
+  end
+
+  rule space
+    (white / comment_to_eol)+
+  end
+
+  rule space_eol
+    (white_noeol*  comment_to_eol? [\n\r]+ )+
+  end
+
+  rule comment_to_eol
+    '#' (!"\n" .)*
+  end
+
+  rule white_noeol
+    [ \t]+
+  end
+
+  rule white
+    [ \t\n\r]
+  end
+end
+
+
+end
+end
