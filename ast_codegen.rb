@@ -58,14 +58,14 @@ class CodegenContext
 	# class,
         @module.globals["ClassClassInstance"],
 	# attribute list head
-	LLVM::Constant.new(LLVM::C.LLVMConstPointerNull(LLVM.Pointer(AttributeListEntryType)))
+	AttributeListEntryType.pointer.null_pointer
       ),
       # superclass (none, for 'Object')
-      LLVM::Constant.new(LLVM::C.LLVMConstPointerNull(LLVM.Pointer(ClassType))),
+      ClassType.pointer.null_pointer,
       # class name,
       object_name_ptr,
       # method list head,
-      LLVM::Constant.new(LLVM::C.LLVMConstPointerNull(LLVM.Pointer(MethodListEntryType)))
+      MethodListEntryType.pointer.null_pointer
     )
     obj_class_global = global_constant(ClassType, object_class_instance, ObjectClassInstanceName)
     class_class_instance = build_class_instance("Class", obj_class_global)
