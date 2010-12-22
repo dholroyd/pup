@@ -78,7 +78,7 @@ class CodegenContext
   end
 
   def build_class_instance(class_name, super_class_instance, meth_list_head=nil)
-    super_pointer = super_class_instance.nil? ? LLVM::C.LLVMConstPointerNull(LLVM.Pointer(ClassType)) : super_class_instance
+    super_pointer = super_class_instance.nil? ? ClassType.pointer.null : super_class_instance
     const_struct(
       # object header,
       const_struct(
