@@ -73,6 +73,23 @@ class CodegenContext
     string_class_instance = build_class_instance("String", obj_class_global)
     @string_class_global.initializer = string_class_instance
 
+
+    true_class_instance = build_class_instance("TrueClass", obj_class_global)
+    true_class_global = global_constant(ClassType, true_class_instance, "TrueClassInstance")
+    false_class_instance = build_class_instance("FalseClass", obj_class_global)
+    false_class_global = global_constant(ClassType, false_class_instance, "FalseClassInstance")
+
+    true_obj_instance = const_struct(
+      true_class_global,
+      AttributeListEntryType.pointer.null
+    )
+    true_global = global_constant(ObjectType, true_obj_instance, "TrueObjInstance")
+    false_obj_instance = const_struct(
+      false_class_global,
+      AttributeListEntryType.pointer.null
+    )
+    false_global = global_constant(ObjectType, false_obj_instance, "FalseObjInstance")
+
     main_class_instance = build_class_instance("Main", obj_class_global, build_meth_list_entry(:puts, @puts_method))
     obj_class_global = global_constant(ClassType, main_class_instance, "Main")
   end
@@ -212,6 +229,18 @@ class CodegenContext
 
   private
 
+  def class_ptr_from_obj_ptr(builder, obj_ptr)
+    raise "not a pointer to object" unless obj_ptr.type == ::Pup::Core::Types::ObjectPtrType
+    obj_class = builder.struct_gep(obj_ptr, 0, "obj_class")
+    return builder.load(obj_class, "class_p")
+  end
+
+  def gen_if_instance_of(builder, obj_p, class_p, then_bk, else_bk)
+    objclass_p = class_ptr_from_obj_ptr(builder, obj_p)
+    cmp2 = builder.icmp(:eq, objclass_p, class_p, "is_instance")
+    builder.cond(cmp2, then_bk, else_bk)
+  end
+
   def build_puts_meth
     putsf = @module.functions.add("puts", [CStrType], LLVM::Int32)
 
@@ -232,10 +261,11 @@ class CodegenContext
       arg = nil
       with_builder_at_end(test_str) do |b|
 	arg = b.load(pup_puts.param_argv, "arg")
-	obj_p = b.struct_gep(arg, 0, "obj_p")
-	class_p = b.load(obj_p, "class_p")
-	cmp2 = b.icmp(:eq, class_p, @module.globals[StringClassInstanceName])
-	b.cond(cmp2, do_puts, bad_string)
+	gen_if_instance_of(b, arg, @module.globals[StringClassInstanceName],
+			   do_puts, bad_string)
+#	class_p = class_ptr_from_obj_ptr(b, arg)
+#	cmp2 = b.icmp(:eq, class_p, @module.globals[StringClassInstanceName])
+#	b.cond(cmp2, do_puts, bad_string)
       end
 
       with_builder_at_end(bad_string) do |b|
@@ -352,8 +382,35 @@ end
 
 class IfStmt
   def codegen(ctx)
-    raise "not implemented yet"
-#    cond = ctx.append_block("cond")
+    # alloacte a place to store the 'value' of the if-stmt,
+    result = ctx.current_method.entry_block_builder.alloca(::Pup::Core::Types::ObjectPtrType, "if_tmp_value")
+
+    bkcond = ctx.current_method.function.basic_blocks.append("cond")
+    ctx.build.br(bkcond)
+    bkthen = ctx.current_method.function.basic_blocks.append("then")
+    bkelse = ctx.current_method.function.basic_blocks.append("else")
+    bkcontinue = ctx.current_method.function.basic_blocks.append("ifcontinue")
+    ctx.with_builder_at_end(bkcond) do |b|
+      val = cond.codegen(ctx)
+      cmp = b.icmp(:eq, val, ctx.module.globals["FalseObjInstance"], "is_false")
+      b.cond(cmp, bkelse, bkthen)
+    end
+    ctx.with_builder_at_end(bkthen) do |b|
+      v = ifbk.codegen(ctx)
+      b.store(v, result)
+      b.br(bkcontinue)
+    end
+    if elsebk
+      ctx.with_builder_at_end(bkelse) do |b|
+	v = elsebk.codegen(ctx)
+	b.store(v, result)
+	b.br(bkcontinue)
+      end
+    else
+      raise "write code to make the 'result' of the if-stmt be nil"
+    end
+    ctx.build.position_at_end(bkcontinue)
+    ctx.build.load(result, "if_result")
   end
 end
 
@@ -436,6 +493,16 @@ end
 
 class IntLitaeral
   # TODO
+end
+
+class BoolLiteral
+  def codegen(ctx)
+    if true?
+      ctx.module.globals["TrueObjInstance"]
+    else
+      ctx.module.globals["FalseObjInstance"]
+    end
+  end
 end
 
 end

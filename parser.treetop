@@ -221,6 +221,7 @@ grammar Pup
     parenthesis
 #    / unary
     / number
+    / bool
     / quoted_string
     / invoke
   end
@@ -325,6 +326,19 @@ grammar Pup
     [1-9] [0-9]* {
       def value
 	IntLiteral.new(text_value)
+      end
+    }
+  end
+
+  rule bool
+    'true' {
+      def value
+	BoolLiteral.new(true)
+      end
+    }
+    / 'false' {
+      def value
+	BoolLiteral.new(false)
       end
     }
   end

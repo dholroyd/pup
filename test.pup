@@ -1,3 +1,8 @@
 test = "hello world"
+b = false
 
-puts(test)
+if b
+  puts(test)
+else
+  puts("goodbye world")
+end

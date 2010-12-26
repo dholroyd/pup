@@ -128,6 +128,18 @@ class IntLiteral < AST
   end
 end
 
+class BoolLiteral
+  def initialize(val)
+    @val = val
+  end
+  def true?
+    @val
+  end
+  def false?
+    !@val
+  end
+end
+
 class Block < AST
   attr_accessor :params, :statements
   def initialize(params, statements)
