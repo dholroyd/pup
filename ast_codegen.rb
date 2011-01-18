@@ -1,6 +1,8 @@
 
 # extends AST classes with codegen() methods which build LLVM IR
 
+require 'runtime'
+
 module Pup
 module Parse
 
@@ -11,36 +13,41 @@ class CodegenContext
 
   include ::Pup::Core::Types
 
-  attr_reader :module, :invoker
+  attr_accessor :invoker
+  attr_reader :module, :self_ref
 
   def initialize
     @module = LLVM::Module.create("Pup")
     @build = nil
+    @self_ref = nil
     @current_method = nil
     @block = nil
     @string_class_global = global_constant(ClassType, nil, StringClassInstanceName)
     @puts_method = build_puts_meth
     init_types
-    @invoker = build_method_invoker_fn
+    #@invoker = build_method_invoker_fn
+
+    rtb = ::Pup::Runtime::RuntimeBuilder.new(self)
+    rtb.build_runtime_init
   end
 
   def global_constant(type, value, name="")
     const = @module.globals.add(type, name)
     const.linkage = :internal
     const.initializer = value if value
-    const.global_constant = true
+#    const.global_constant = true
     const
   end
 
   def global_string_constant(value, name=nil)
     str = LLVM::ConstantArray.string(value)
     name = "str#{value}" unless name
-    global_constant(str, str, name)
+    global_constant(str, str, name).bit_cast(CStrType)
   end
 
   def init_types
-    object_name = global_string_constant("Object")
-    object_name_ptr = object_name.gep(LLVM.Int(0), LLVM.Int(0))
+    object_name_ptr = global_string_constant("Object")
+    #object_name_ptr = object_name.gep(LLVM.Int(0), LLVM.Int(0))
 
     @module.types.add("Object", ObjectType)
     @module.types.add("Class", ClassType)
@@ -91,7 +98,7 @@ class CodegenContext
     false_global = global_constant(ObjectType, false_obj_instance, "FalseObjInstance")
 
     main_class_instance = build_class_instance("Main", obj_class_global, build_meth_list_entry(:puts, @puts_method))
-    obj_class_global = global_constant(ClassType, main_class_instance, "Main")
+    global_constant(ClassType, main_class_instance, "Main")
   end
 
   def build_class_instance(class_name, super_class_instance, meth_list_head=nil)
@@ -106,7 +113,7 @@ class CodegenContext
       ),
       super_class_instance,
       # class name,
-      global_string_constant(class_name).gep(LLVM.Int(0), LLVM.Int(0)),
+      global_string_constant(class_name), #.gep(LLVM.Int(0), LLVM.Int(0)),
       # method list head,
       meth_list_head || MethodListEntryType.pointer.null_pointer
     )
@@ -153,6 +160,16 @@ class CodegenContext
     build.instance_eval(&b)
   end
 
+  def using_self(new_self)
+    old_self = @self_ref
+    begin
+      @self_ref = new_self
+      yield
+    ensure
+      @self_ref = old_self
+    end
+  end
+
   def def_method(name)
     arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
     @module.functions.add(name, arg_types, ObjectPtrType) do |fn, target, argc, argv|
@@ -161,15 +178,17 @@ class CodegenContext
       argv.name = "argv"
       last_method = @current_method
       begin
-	@current_method = MethodDef.new(fn, target, argc, argv)
-	yield @current_method
+	@current_method = MethodRef.new(fn, target, argc, argv)
+	using_self(target) do
+	  yield @current_method
+        end
       ensure
 	@current_method = last_method
       end
     end
   end
 
-  class MethodDef
+  class MethodRef
     attr_reader :function, :param_target, :param_argc, :param_argv
     def initialize(function, param_target, param_argc, param_argv)
       @entry_block_builder = nil
@@ -221,13 +240,39 @@ class CodegenContext
 	b.store(@module.globals["Main"], main_obj_class)
 	attr_list_head = b.struct_gep(main_obj, 1, "attr_list_head")
 	b.store(AttributeListEntryType.pointer.null, attr_list_head)
+
+	ret_val = build.call(@module.functions["pup_runtime_init"])
+
 	ret_val = build.call(@module.functions["pup_main"], main_obj, LLVM.Int(0), ArgsType.null)
 	b.ret(LLVM::Int32.from_i(0))
       end
     end
   end
 
-  private
+  # helper for building method callsites
+  #
+  #  method_name - a ruby String - this method will convert to a symbol
+  #  args - a ruby array of LLVM::Values - this method will allocate the
+  #         LLVM array and store the args values into it
+  def build_simple_method_invoke(receiver, method_name, *args)
+    argc = LLVM::Int32.from_i(args.length)
+    argv = build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{method_name}_argv")
+    args.each_with_index do |arg, i|
+      arg_element = build.gep(argv, [LLVM.Int(i)], "#{method_name}_argv_#{i}")
+      build.store(arg, arg_element)
+    end
+    build_simple_method_invoke_argv(receiver, method_name, argv, args.length)
+  end
+
+  # helper for building method callsites
+  # 
+  #  method_name - a ruby String (will convert to a symbol before use)
+  #  argv - an LLVM array of arguments
+  #  argc - ruby fixnum - the number of arguments in the argv array
+  def build_simple_method_invoke_argv(receiver, method_name, argv, argc)
+    sym = LLVM.Int(method_name.to_sym.to_i)
+    build.call(invoker, receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
+  end
 
   def class_ptr_from_obj_ptr(builder, obj_ptr)
     raise "not a pointer to object" unless obj_ptr.type == ::Pup::Core::Types::ObjectPtrType
@@ -243,43 +288,23 @@ class CodegenContext
 
   def build_puts_meth
     putsf = @module.functions.add("puts", [CStrType], LLVM::Int32)
+    # TODO: move!
+    @module.functions.add("abort", [], LLVM.Void)
+    @module.functions.add("printf", [CStrType], LLVM::Int, true)
 
-    def_method("pup_puts") do |pup_puts|
-      entry_build = pup_puts.entry_block_builder
-      wrong_no_args = pup_puts.function.basic_blocks.append("wrong_no_args")
-      test_str = pup_puts.function.basic_blocks.append("test_str")
-      do_puts = pup_puts.function.basic_blocks.append("do_puts")
-      bad_string = pup_puts.function.basic_blocks.append("bad_string")
-      cmp1 = entry_build.icmp(:eq, pup_puts.param_argc, LLVM.Int(1))
-      entry_build.cond(cmp1, test_str, wrong_no_args)
+    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
+    @module.functions.add("pup_puts", arg_types, ObjectPtrType)
+  end
 
-      with_builder_at_end(wrong_no_args) do |b|
-	err_msg = global_string_constant("Wrong number of arguments given to puts()", "wrong_num_args")
-	b.call(putsf, err_msg.gep(LLVM.Int(0), LLVM.Int(0)))
-	b.ret(ObjectPtrType.null)
-      end
-      arg = nil
-      with_builder_at_end(test_str) do |b|
-	arg = b.load(pup_puts.param_argv, "arg")
-	gen_if_instance_of(b, arg, @module.globals[StringClassInstanceName],
-			   do_puts, bad_string)
-#	class_p = class_ptr_from_obj_ptr(b, arg)
-#	cmp2 = b.icmp(:eq, class_p, @module.globals[StringClassInstanceName])
-#	b.cond(cmp2, do_puts, bad_string)
-      end
-
-      with_builder_at_end(bad_string) do |b|
-	err_msg = global_string_constant("puts() requires a String argument", "string_reqd")
-	b.call(putsf, err_msg.gep(LLVM.Int(0), LLVM.Int(0)))
-	b.ret(ObjectPtrType.null)
-      end
-
-      with_builder_at_end(do_puts) do |b|
-	str = b.bit_cast(arg, StringObjectType.pointer, "str")
-	cstr_p = b.struct_gep(str, 1, "cstr_p")
-	cstr = b.load(cstr_p)
-	b.call(putsf, cstr)
-	b.ret(ObjectPtrType.null)
+  def attach_classclass_methods(class_class_instance)
+    def_method("pup_class_new") do |pup_class_new|
+      body = append_block do
+	with_builder_at_end do
+	  theclass = pup_class_new.param_target
+	  obj = build_simple_method_invoke(theclass, "allocate")
+	  build_simple_method_invoke_argv(obj, "initialize", pup_class_new.param_argv, pup_class_new.param_argc)
+	  build.ret(obj)
+	end
       end
     end
   end
@@ -291,69 +316,6 @@ class CodegenContext
       MethodListEntryPtrType.null_pointer
     )
     global_constant(MethodListEntryType, entry, "meth_entry_#{name}")
-  end
-
-  def build_method_invoker_fn
-    @module.functions.add("invoke", [ObjectPtrType, SymbolType, LLVM::Int, ArgsType], ObjectPtrType) do |invoke, target, name_sym, argc, argv|
-      target.name = "target"
-      name_sym.name = "name_sym"
-      argc.name = "argc"
-      argv.name = "argv"
-      entry = invoke.basic_blocks.append("entry")
-      loop_test = invoke.basic_blocks.append("loop_test")
-      loop_start = invoke.basic_blocks.append("loop_start")
-      do_invoke = invoke.basic_blocks.append("do_invoke")
-      loop_end = invoke.basic_blocks.append("loop_end")
-      raise_meth_missing = invoke.basic_blocks.append("raise_meth_missing")
-
-      build = LLVM::Builder.create
-      build.position_at_end(entry)
-      curr_meth_ptr = build.alloca(MethodListEntryPtrType, "curr_meth_ptr")
-      obj_elem = build.gep(target, LLVM.Int(0))
-      target_class_elem = build.struct_gep(obj_elem, 0, "target_class_elem")
-      clazz_ptr = build.load(target_class_elem, "class_ptr")
-      clazz = build.gep(clazz_ptr, LLVM.Int(0))
-      meth_list_head_elem = build.struct_gep(clazz, 3, "method_list_head_elem")
-      meth_list_head_ptr = build.load(meth_list_head_elem, "method_list_head_ptr")
-      build.store(meth_list_head_ptr, curr_meth_ptr)
-      build.br(loop_test)
-
-      build.position_at_end(loop_test)
-      meth_entry = build.load(curr_meth_ptr, "meth_entry")
-      cmp = build.is_null(meth_entry, "is_next_meth_null")
-      build.cond(cmp, raise_meth_missing, loop_start)
-
-      build.position_at_end(loop_start)
-      meth_entry = build.load(curr_meth_ptr, "meth_entry")
-      symbol_elem = build.gep(meth_entry, LLVM.Int(0), "symbol_elem")
-      symbol_ptr = build.struct_gep(symbol_elem, 0, "symbol_ptr")
-      symbol_val = build.load(symbol_ptr, "symbol")
-      cmp = build.icmp(:eq, name_sym, symbol_val, "is_symbol_match")
-      build.cond(cmp, do_invoke, loop_end)
-
-      build.position_at_end(do_invoke)
-      fun_elem = build.gep(meth_entry, LLVM.Int(0), "fun_element")
-      methodfn_ptr = build.struct_gep(fun_elem, 1, "methodfn_ptr")
-      methodfn = build.load(methodfn_ptr, "methodfn")
-      ret_val = build.call(methodfn, target, argc, argv)
-      build.ret(ret_val)
-
-      build.position_at_end(loop_end)
-      meth_entry = build.load(curr_meth_ptr, "meth_entry")
-      next_meth_ptr = build.struct_gep(meth_entry, 2, "next_method_ptr")
-      next_meth = build.load(next_meth_ptr, "next_meth")
-      build.store(next_meth, curr_meth_ptr)
-      build.br(loop_test)
-
-      build.position_at_end(raise_meth_missing)
-      err_msg = global_string_constant("method missing", "no_meth")
-      build.call(@module.functions["puts"], err_msg.gep(LLVM.Int(0), LLVM.Int(0)))
-      build.ret(ObjectPtrType.null)
-      #build.unwind
-
-      build.dispose
-      @invoker = invoke
-    end
   end
 end
 
@@ -450,24 +412,34 @@ class VarOrInvokeExpr
   end
 
   def codegen_invoke(ctx)
-    r = @receiver ? @receiver.codegen(ctx) : SelfExpr.new.codegen(ctx)
+    # TODO: varargs
+    # TODO: duplication vs. ctx.build_simple_invoke()
+    r = @receiver ? @receiver.codegen(ctx) : ctx.self_ref
 
-    argc = LLVM::Int32.from_i(@args.length)
-    argv = ctx.build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{@name.name}_argv")
-    @args.each_with_index do |arg, i|
-      a = arg.codegen(ctx)
-      arg_element = ctx.build.gep(argv, [LLVM.Int(i)], "#{@name.name}_argv_#{i}")
-      ctx.build.store(a, arg_element)
+    argc = LLVM::Int32.from_i(arg_count)
+    if @args
+      argv = ctx.build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{@name.name}_argv")
+      @args.each_with_index do |arg, i|
+	a = arg.codegen(ctx)
+	arg_element = ctx.build.gep(argv, [LLVM.Int(i)], "#{@name.name}_argv_#{i}")
+	ctx.build.store(a, arg_element)
+      end
+    else
+      argv = ::Pup::Core::Types::ObjectPtrType.pointer.null
     end
 #    argv_ptr = ctx.build.gep(argv, 0, "argv")
     sym = LLVM.Int(name.name.to_sym.to_i)
-    ctx.build.call(ctx.invoker, r, sym, LLVM::Int(@args.length), argv, "#{@name.name}_ret")
+    ctx.build.call(ctx.invoker, r, sym, LLVM::Int(arg_count), argv, "#{@name.name}_ret")
+  end
+
+  def arg_count
+    @args ? @args.length : 0
   end
 end
 
 class SelfExpr
   def codegen(ctx)
-    ctx.current_method.param_target
+    ctx.self_ref
   end
 end
 
@@ -502,6 +474,91 @@ class BoolLiteral
     else
       ctx.module.globals["FalseObjInstance"]
     end
+  end
+end
+
+class ClassDef
+  include ::Pup::Core::Types
+
+  def codegen(ctx)
+    # TODO: should be const, not local (implement const support)
+    class_name = name.name
+    classref = ctx.current_method.get_or_create_local(class_name)
+    classdef = nil
+    class_name_ref = ctx.global_string_constant(class_name)
+    superclass_ref = find_superclass(ctx)
+    ctx.eval_build do
+      classdef = call(ctx.module.functions["pup_create_class"],
+                      ctx.module.globals["ClassClassInstance"],
+		      superclass_ref,
+		      class_name_ref,
+                      "class_#{class_name}")
+      classref = bit_cast(classref, ClassType.pointer.pointer, "as_obj_#{class_name}")
+      store(classdef, classref)
+    end
+    # self becomes a ref to the class being defined, within the class body,
+    ctx.using_self(classdef) do
+      body.codegen(ctx)
+    end
+
+    classref
+  end
+
+  def find_superclass(ctx)
+    if extends
+      throw "TODO: implement lookup of superclass by name (i.e. #{extends.inspect})"
+    else
+      ctx.module.globals["ObjectClassInstance"]
+    end
+  end
+end
+
+class MethodDef
+  include ::Pup::Core::Types
+
+  def codegen(ctx)
+    mangled_name = "pup_method__#{name.name}_#{next_serial}"
+    fn = ctx.def_method(mangled_name) do |meth|
+      # TODO: need to actually handle formal param list
+      ctx.append_block do
+	ctx.with_builder_at_end do
+	  if body
+	    ret = body.codegen(ctx)
+	    ctx.build.ret(ret)
+	  else
+            # TODO: return nil
+	    ctx.build.ret(ObjectPtrType.null)
+	  end
+	end
+      end
+    end
+    hopefully_a_class = class_context(ctx)
+    ctx.build.call(ctx.module.functions["pup_define_method"],
+                   hopefully_a_class,
+                   LLVM.Int(name.name.to_sym.to_i),
+                   fn)
+  end
+
+  def class_context(ctx)
+    val = ctx.self_ref
+    if val.type == ClassType.pointer
+      return val
+    end
+    when_class = ctx.current_method.function.basic_blocks.append("when_class")
+    when_not_class = ctx.current_method.function.basic_blocks.append("when_not_class")
+    ctx.gen_if_instance_of(ctx.build,
+                           val,
+                           ctx.module.globals["ClassClassInstance"],
+                           when_class, when_not_class)
+    ctx.with_builder_at_end(when_not_class) do |b|
+      b.call(ctx.module.functions["puts"], ctx.global_string_constant("'self' is not a Class instance"))
+    end
+    ctx.build.position_at_end(when_class)
+    return ctx.build.bit_cast(val, ClassType.pointer)
+  end
+
+  def next_serial
+    @serial = @serial ? @serial+1 : 0
   end
 end
 

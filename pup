@@ -3,6 +3,6 @@
 #chk="valgrind --leak-check=no --read-var-info=yes"
 #chk="gdb --args"
 
-export LD_LIBRARY_PATH=/home/dave/projects/pre-pup/llvm-2.7/Release+Debug/lib
+#export LD_LIBRARY_PATH=/home/dave/projects/pre-pup/llvm-2.7/Release+Debug/lib
 
-$chk ruby -w -I /var/lib/gems/1.8/gems/treetop-1.4.8/lib/ -I /var/lib/gems/1.8/gems/polyglot-0.3.1/lib/ -I /home/dave/projects/ruby-llvm/lib/ pup.rb $*
+$chk ruby -w -I /var/lib/gems/1.8/gems/treetop-1.4.9/lib/ -I /var/lib/gems/1.8/gems/polyglot-0.3.1/lib/ -I ${HOME}/projects/ruby-llvm/lib/ pup.rb $*

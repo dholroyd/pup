@@ -1,8 +1,16 @@
 test = "hello world"
 b = false
 
+class Bee
+  def foo
+    "goodbye world"
+  end
+end
+
+obj = Bee.new
+
 if b
   puts(test)
 else
-  puts("goodbye world")
+  puts(obj.foo)
 end
