@@ -35,10 +35,10 @@ grammar Pup
 
   rule classdef
     'class' white_noeol thename (white_noeol / !extends) e:extends? space_eol
-      s:statements? space
+      s:( statements space )?
     'end' {
       def value
-	ClassDef.new(thename.value, e.elements ? e.value : nil, s.elements ? s.value : nil)
+	ClassDef.new(thename.value, e.elements ? e.value : nil, s.elements ? s.elements[0].value : nil)
       end
     }
   end
@@ -56,7 +56,7 @@ grammar Pup
       s:statements? space
     'end' {
       def value
-	MethodDef.new(thename.value, m.elements ? m.value : nil, s.elements ? s.statements.value : nil)
+	MethodDef.new(thename.value, m.elements ? m.value : nil, s.elements ? s.value : nil)
       end
     }
   end
