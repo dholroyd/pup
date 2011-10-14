@@ -28,3 +28,8 @@ struct Class {
 	char *name;
 	struct MethodListEntry *method_list_head;
 };
+
+struct String {
+	struct Object obj_header;
+	char *value;
+};

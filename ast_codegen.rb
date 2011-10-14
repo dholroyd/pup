@@ -14,7 +14,16 @@ class CodegenContext
   include ::Pup::Core::Types
 
   attr_accessor :invoker
-  attr_reader :module, :self_ref, :runtime_builder
+  attr_reader :module, :runtime_builder, :string_class_global
+
+  def self_ref
+    raise "reference to 'self' is not yet defined" unless @self_ref
+    @self_ref
+  end
+
+  def next_serial
+    @serial += 1
+  end
 
   def initialize
     @module = LLVM::Module.create("Pup")
@@ -22,13 +31,11 @@ class CodegenContext
     @self_ref = nil
     @current_method = nil
     @block = nil
+    @serial = 0
     @string_class_global = global_constant(ClassType, nil, StringClassInstanceName)
+    @string_class_global.linkage = :external
     @puts_method = build_puts_meth
     init_types
-
-    # the sequence of numbers used to make sure LLVM function names generated
-    # for method implementations are unique
-    @meth_seq = 0
 
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
     @runtime_builder.build_runtime_init
@@ -188,14 +195,13 @@ class CodegenContext
       argc.name = "argc"
       argv.name = "argv"
       last_method = @current_method
-      last_self_ref = @self_ref
       begin
 	@current_method = MethodRef.new(fn, target, argc, argv)
-	@self_ref = target
-	yield @current_method
+	using_self(target) do
+	  yield @current_method
+        end
       ensure
 	@current_method = last_method
-	@self_ref = last_self_ref
       end
     end
   end
@@ -306,39 +312,19 @@ class CodegenContext
     @module.functions.add("abort", [], LLVM.Void)
     @module.functions.add("printf", [CStrType], LLVM::Int, true)
 
-    def_method("pup_puts") do |pup_puts|
-      entry_build = pup_puts.entry_block_builder
-      wrong_no_args = pup_puts.function.basic_blocks.append("wrong_no_args")
-      test_str = pup_puts.function.basic_blocks.append("test_str")
-      do_puts = pup_puts.function.basic_blocks.append("do_puts")
-      bad_string = pup_puts.function.basic_blocks.append("bad_string")
-      cmp1 = entry_build.icmp(:eq, pup_puts.param_argc, LLVM.Int(1))
-      entry_build.cond(cmp1, test_str, wrong_no_args)
+    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
+    @module.functions.add("pup_puts", arg_types, ObjectPtrType)
+  end
 
-      with_builder_at_end(wrong_no_args) do |b|
-	err_msg = global_string_constant("Wrong number of arguments given to puts()", "wrong_num_args")
-	b.call(putsf, err_msg)
-	b.ret(ObjectPtrType.null)
-      end
-      arg = nil
-      with_builder_at_end(test_str) do |b|
-	arg = b.load(pup_puts.param_argv, "arg")
-	gen_if_instance_of(b, arg, @module.globals[StringClassInstanceName],
-			   do_puts, bad_string)
-      end
-
-      with_builder_at_end(bad_string) do |b|
-	err_msg = global_string_constant("puts() requires a String argument", "string_reqd")
-	b.call(putsf, err_msg)
-	b.ret(ObjectPtrType.null)
-      end
-
-      with_builder_at_end(do_puts) do |b|
-	str = b.bit_cast(arg, StringObjectType.pointer, "str")
-	cstr_p = b.struct_gep(str, 1, "cstr_p")
-	cstr = b.load(cstr_p)
-	b.call(putsf, cstr)
-	b.ret(ObjectPtrType.null)
+  def attach_classclass_methods(class_class_instance)
+    def_method("pup_class_new") do |pup_class_new|
+      body = append_block do
+	with_builder_at_end do
+	  theclass = pup_class_new.param_target
+	  obj = build_simple_method_invoke(theclass, "allocate")
+	  build_simple_method_invoke_argv(obj, "initialize", pup_class_new.param_argv, pup_class_new.param_argc)
+	  build.ret(obj)
+	end
       end
     end
   end
@@ -486,7 +472,7 @@ class StringLiteral
       objobj = struct_gep(strobj, 0, "objobj")
       class_ptr = struct_gep(objobj, 0, "classptr")
       # set the class pointer within the object header,
-      store(ctx.module.globals[::Pup::Parse::CodegenContext::StringClassInstanceName], class_ptr)
+      store(ctx.string_class_global, class_ptr)
 
       data_ptr = struct_gep(strobj, 1, "data_ptr")
       src_ptr = gep(data, [LLVM.Int(0),LLVM.Int(0)], "src_ptr")
@@ -515,16 +501,18 @@ class ClassDef
 
   def codegen(ctx)
     # TODO: should be const, not local (implement const support)
-    classref = ctx.current_method.get_or_create_local(name.name)
+    class_name = name.name
+    classref = ctx.current_method.get_or_create_local(class_name)
     classdef = nil
-    class_name = ctx.global_string_constant(name.name)
+    class_name_ref = ctx.global_string_constant(class_name)
     superclass_ref = find_superclass(ctx)
     ctx.eval_build do
       classdef = call(ctx.module.functions["pup_create_class"],
                       ctx.module.globals["ClassClassInstance"],
 		      superclass_ref,
-		      class_name)
-      classref = bit_cast(classref, ClassType.pointer.pointer)
+		      class_name_ref,
+                      "class_#{class_name}")
+      classref = bit_cast(classref, ClassType.pointer.pointer, "as_obj_#{class_name}")
       store(classdef, classref)
     end
     # self becomes a ref to the class being defined, within the class body,
@@ -545,21 +533,44 @@ class ClassDef
 end
 
 class MethodDef
+  include ::Pup::Core::Types
+
   def codegen(ctx)
-    fn = ctx.def_method_uniquely(name.name) do |fn|
-      method_body = ctx.append_block("body") do
+    mangled_name = "pup_method__#{name.name}_#{ctx.next_serial}"
+    fn = ctx.def_method(mangled_name) do |meth|
+      # TODO: need to actually handle formal param list
+      ctx.append_block do
 	ctx.with_builder_at_end do
 	  if body
 	    ret = body.codegen(ctx)
+	    ctx.build.ret(ret)
 	  else
-	    raise "TODO: return nil when method body is empty"
+            # TODO: return nil
+	    ctx.build.ret(ObjectPtrType.null)
 	  end
-	  ctx.build.ret(ret)
 	end
       end
     end
-    # TODO; adding methods to the metaclass of an object?
+    #hopefully_a_class = class_context(ctx)
     ctx.runtime_builder.call_define_method(ctx.self_ref, LLVM.Int(name.name.to_sym.to_i), fn)
+  end
+
+  def class_context(ctx)
+    val = ctx.self_ref
+    if val.type == ClassType.pointer
+      return val
+    end
+    when_class = ctx.current_method.function.basic_blocks.append("when_class")
+    when_not_class = ctx.current_method.function.basic_blocks.append("when_not_class")
+    ctx.gen_if_instance_of(ctx.build,
+                           val,
+                           ctx.module.globals["ClassClassInstance"],
+                           when_class, when_not_class)
+    ctx.with_builder_at_end(when_not_class) do |b|
+      b.call(ctx.module.functions["puts"], ctx.global_string_constant("'self' is not a Class instance"))
+    end
+    ctx.build.position_at_end(when_class)
+    return ctx.build.bit_cast(val, ClassType.pointer)
   end
 end
 

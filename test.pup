@@ -3,7 +3,7 @@ b = false
 
 class Bee
   def foo
-    "goodbye world!"
+    "goodbye world"
   end
 end
 
