@@ -8,13 +8,13 @@ runit:	a.out
 
 
 a.out:	test.bc runtime.bc
-	${llvmc} -O0 -g test.bc runtime.bc
+	llvm-ld-2.9 -disable-inlining -native test.bc runtime.bc
 
 test.bc:	test.pup *.rb
 	./pup test.pup
 
-runtime.bc:	runtime.c core_types.h
-	${clang} -O0 -g -c -emit-llvm -fexceptions runtime.c -o runtime.bc
+runtime.bc:	runtime.c core_types.h abortf.h
+	${clang} -O0 -g -c -emit-llvm runtime.c -o runtime.bc
 
 parser.rb:	parser.treetop
 	${tt} parser.treetop

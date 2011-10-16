@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "core_types.h"
+#include "abortf.h"
 
 extern struct Class StringClassInstance;
 
@@ -32,10 +33,8 @@ void pup_define_method(struct Class *class, const long name_sym, Method *method)
 	struct MethodListEntry **pos;
 	struct MethodListEntry *new;
 
-	if (!class) {
-		printf("Class reference given to pup_define_method() must not be null\n");
-		abort();
-	}
+	ABORT_ON(!class,
+		"Class reference given to pup_define_method() must not be null");
 	pos = &class->method_list_head;
 	while (*pos) {
 		pos = &(*pos)->next;
@@ -100,11 +99,9 @@ struct Object *pup_invoke(struct Object *target, const long name_sym,
 {
 	struct Class *class = target->type;
 	Method *method = find_method_in_classes(class, name_sym);
-	if (!method) {
-		printf("No method sym:%ld in class <%s>\n",
-		       name_sym, class->name);
-		abort();
-	}
+	ABORTF_ON(!method,
+		 "No method sym:%ld in class <%s>",
+		 name_sym, class->name);
 	return (*method)(target, argc, argv);
 }
 
@@ -138,19 +135,12 @@ struct Object *pup_puts(const struct Object *target,
 		// TODO return nil
 		return NULL;
 	}
-	if (!argv) {
-		printf("puts() argv is NULL!\n");
-		abort();
-	}
-	if (!pup_is_class(argv[0], &StringClassInstance)) {
-		printf("Argument to puts must be a %s, but got class %s\n",
-		       StringClassInstance.name, type_name_of(argv[0]));
-		abort();
-	}
+	ABORT_ON(!argv, "puts() argv is NULL!");
+	ABORTF_ON(!pup_is_class(argv[0], &StringClassInstance),
+		  "Argument to puts must be a %s, but got class %s",
+		  StringClassInstance.name, type_name_of(argv[0]));
 	arg = (struct String *)argv[0];
-	if (!arg) {
-		printf("String object contains NULL data pointer!\n");
-	}
+	ABORT_ON(!arg, "String object contains NULL data pointer!");
 	puts(arg->value);
 
 	// TODO return nil
