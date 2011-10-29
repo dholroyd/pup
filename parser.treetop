@@ -30,6 +30,7 @@ grammar Pup
     if
     / classdef
     / methoddef
+    / begin
     / expression
   end
 
@@ -88,6 +89,41 @@ grammar Pup
     }
   end
 
+  rule begin
+    'begin' space_eol
+    white_noeol? beginbk:statements space
+    rescuebks:therescue*
+    elsebk:theelse?
+    ensurebk:theensure?
+    'end' {
+      def value
+	BeginStmt.new(beginbk.value,
+                      rescuebks.elements.map{|r| r.value },
+                      elsebk.elements ? elsebk.value : nil,
+                      ensurebk.elements ? ensurebk.value : nil)
+      end
+    }
+  end
+
+  rule therescue
+    'rescue' types:(white_noeol unparenthesised_args)? name:( white_noeol? "=>" white_noeol? name:thename )?
+    space statements space {
+      def value
+	RescueBlock.new(types.elements ? types.elements[1].value : nil,
+	                name.elements ? name.name.value : nil,
+			statements.value)
+      end
+    }
+  end
+
+  rule theensure
+    'ensure' space statements space {
+      def value
+	statements.value
+      end
+    }
+  end
+
   rule expression
     assignment
   end
@@ -102,6 +138,7 @@ grammar Pup
   end
 
   rule assign_op
+    !"=>"
     '='
     / "+="
     / "-="
@@ -350,6 +387,7 @@ grammar Pup
   rule thename
     !"end"
     !"else"
+    !"rescue"
     # TODO seperate @att rule from other names; allow syntactic differentiation
     '@'? [A-Za-z_] [A-Za-z_0-9]* {
       def value

@@ -1,0 +1,7 @@
+class Foo
+  def hello
+    "success"
+  end
+end
+
+puts Foo.new.hello

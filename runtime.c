@@ -1,13 +1,18 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include "core_types.h"
+#include "runtime.h"
 #include "abortf.h"
+#include "raise.h"
+#include "exception.h"
 
 extern struct Class StringClassInstance;
+extern struct Class ExceptionClassInstance;
 
-static void obj_init(struct Object *obj, struct Class *type)
+void obj_init(struct Object *obj, struct Class *type)
 {
 	obj->type = type;
 	obj->attr_list_head = NULL;
@@ -48,9 +53,7 @@ void pup_define_method(struct Class *class, const long name_sym, Method *method)
 
 
 
-struct Object *pup_object_allocate(struct Object *target,
-                                   long argc,
-				   struct Object **argv)
+METH_IMPL(pup_object_allocate)
 {
 	struct Object *obj = (struct Object *)malloc(sizeof(struct Object));
 	obj->type = (struct Class *)target;
@@ -61,12 +64,59 @@ struct Object *pup_object_allocate(struct Object *target,
 /*
  * Default implementation for Object#initialize
  */
-struct Object *pup_object_initialize(struct Object *target,
-                                     long argc,
-                                     struct Object **argv)
+METH_IMPL(pup_object_initialize)
 {
 	// TODO: return nil
 	return NULL;
+}
+
+const char *pup_type_name_of(const struct Object *obj)
+{
+	if (!obj) {
+		return "<NULL Object ref>";
+	}
+	if (!obj->type) {
+		return "<Object with NULL type ref!>";
+	}
+	if (!obj->type->name) {
+		return "<NULL type name!>";
+	}
+	return obj->type->name;
+}
+
+struct Object *pup_string_new_cstr(char *str)
+{
+	struct String *string = malloc(sizeof(struct String));
+	if (!malloc) {
+		return NULL;
+	}
+	obj_init(&(string->obj_header), &StringClassInstance);
+	string->value = strdup(str);
+	return (struct Object *)string;
+}
+
+void pup_default_obj_cstr(const struct Object *obj,
+                          char *buf,
+                          const size_t buf_size)
+{
+	snprintf(buf, buf_size, "<%s:%p>",
+	         pup_type_name_of(obj), obj);
+}
+
+void pup_arity_check(int expected, int actual)
+{
+	if (expected != actual) {
+		// TODO: ArgumentError
+		pup_raise(pup_new_runtimeerrorf("wrong number of arguments (%d for %d)",
+		                        actual, expected));
+	}
+}
+
+METH_IMPL(pup_object_to_s)
+{
+	char buf[1024];
+	pup_default_obj_cstr(target, buf, sizeof(buf));
+	return pup_string_new_cstr(buf);
 }
 
 static Method *find_method_in_list(struct MethodListEntry *meth_list,
@@ -99,9 +149,11 @@ struct Object *pup_invoke(struct Object *target, const long name_sym,
 {
 	struct Class *class = target->type;
 	Method *method = find_method_in_classes(class, name_sym);
-	ABORTF_ON(!method,
-		 "No method sym:%ld in class <%s>",
-		 name_sym, class->name);
+	if (!method) {
+		char buf[256];
+		snprintf(buf, sizeof(buf), "undefined method `sym:%ld' for %s", name_sym, pup_type_name_of(target));
+		pup_raise_runtimeerror(buf);
+	}
 	return (*method)(target, argc, argv);
 }
 
@@ -110,38 +162,37 @@ int pup_is_class(const struct Object *obj, const struct Class *class)
 	return obj->type == class;
 }
 
-static const char *type_name_of(const struct Object *obj)
+int pup_is_descendant_or_same(const struct Class *ancestor,
+                              const struct Class *descendant)
 {
-	if (!obj) {
-		return "<NULL Object ref>";
+	for (const struct Class *next = ancestor; next; next=next->superclass) {
+		if (next == descendant) {
+			return true;
+		}
 	}
-	if (!obj->type) {
-		return "<Object with NULL type ref!>";
-	}
-	if (!obj->type->name) {
-		return "<NULL type name!>";
-	}
-	return obj->type->name;
+	return false;
 }
 
-struct Object *pup_puts(const struct Object *target,
-                        const long argc,
-                        const struct Object **argv)
+char *pup_stringify(struct Object *obj)
 {
-	struct String *arg;
-	if (argc != 1) {
-		printf("Wrong number of arguments for puts(), %ld, expecting 1\n",
-		       argc);
-		// TODO return nil
-		return NULL;
+	if (pup_is_class(obj, &StringClassInstance)) {
+		return strdup(((struct String *)obj)->value);
 	}
+	if (pup_is_class(obj, &ExceptionClassInstance)) {
+		return strdup(((struct Exception *)obj)->message);
+	}
+	char buf[1024];
+	pup_default_obj_cstr(obj, buf, sizeof(buf));
+	return strdup(buf);
+}
+
+METH_IMPL(pup_puts)
+{
+	pup_arity_check(1, argc);
 	ABORT_ON(!argv, "puts() argv is NULL!");
-	ABORTF_ON(!pup_is_class(argv[0], &StringClassInstance),
-		  "Argument to puts must be a %s, but got class %s",
-		  StringClassInstance.name, type_name_of(argv[0]));
-	arg = (struct String *)argv[0];
-	ABORT_ON(!arg, "String object contains NULL data pointer!");
-	puts(arg->value);
+	char *str = pup_stringify(argv[0]);
+	puts(str);
+	free(str);
 
 	// TODO return nil
 	return NULL;

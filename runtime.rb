@@ -44,6 +44,18 @@ class RuntimeBuilder
   end
 
   def build_runtime_init
+    @ctx.module.functions.add("llvm.eh.exception",
+                              [],
+			      LLVM::Int8.type.pointer)
+    @ctx.module.functions.add("llvm.eh.selector",
+                              [LLVM::Int8.type.pointer, LLVM::Int8.type.pointer],
+			      LLVM::Int32, true)
+    @ctx.module.functions.add("pup_eh_personality",
+                              [],
+                              LLVM.Void)
+    @ctx.module.functions.add("pup_handle_uncaught_exception",
+                              [LLVM::Int8.type.pointer],
+                              ObjectPtrType)
     @ctx.module.functions.add("pup_create_class",
                               [ClassType.pointer, ClassType.pointer, CStrType],
 			      ClassType.pointer)
@@ -59,6 +71,9 @@ class RuntimeBuilder
 			      ObjectPtrType)
     @ctx.invoker = @ctx.module.functions.add("pup_invoke",
                               [ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
+			      ObjectPtrType)
+    @ctx.module.functions.add("extract_exception_obj",
+                              [LLVM::Int8.type.pointer],
 			      ObjectPtrType)
     @ctx.module.functions.add("pup_runtime_init", [], LLVM.Void) do |fn|
       b = fn.basic_blocks.append

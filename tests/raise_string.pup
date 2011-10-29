@@ -1,0 +1,6 @@
+begin
+  raise("success")
+  puts("failure")
+rescue => e
+  puts(e)
+end

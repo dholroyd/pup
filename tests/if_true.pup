@@ -1,0 +1,7 @@
+b = true
+
+if b
+  puts("success")
+else
+  puts("failure")
+end

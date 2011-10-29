@@ -57,6 +57,25 @@ class IfStmt < AST
   end
 end
 
+class BeginStmt < AST
+  attr_reader :beginbk, :rescuebks, :elsebk, :ensurebk
+
+  def initialize(beginbk, rescuebks, elsebk, ensurebk)
+    @beginbk = beginbk
+    @rescuebks = rescuebks
+    @elsebk = elsebk
+    @ensurebk = ensurebk
+  end
+end
+
+class RescueBlock
+  attr_reader :types, :var_name, :statements
+
+  def initialize(types, var_name, statements)
+    @types, @var_name, @statements = types, var_name, statements
+  end
+end
+
 class VarOrInvokeExpr < AST
   attr_accessor :name, :args, :block, :receiver
 

@@ -33,3 +33,9 @@ struct String {
 	struct Object obj_header;
 	char *value;
 };
+
+struct Exception {
+	struct Object obj_header;
+	char *message;
+	/* TODO: backtrace? */
+};
