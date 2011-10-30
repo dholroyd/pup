@@ -17,7 +17,6 @@ end
 test.default_rescue_block do
   stdout.should match /success/
 end
-test.typed_rescue_block do
-  puts stderr
+test.raise_string do
   stdout.should match /success/
 end
