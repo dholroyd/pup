@@ -49,7 +49,7 @@ class RuntimeBuilder
 			      LLVM::Int8.type.pointer)
     @ctx.module.functions.add("llvm.eh.selector",
                               [LLVM::Int8.type.pointer, LLVM::Int8.type.pointer],
-			      LLVM::Int32, true)
+			      LLVM::Int32, :varargs => true)
     @ctx.module.functions.add("pup_eh_personality",
                               [],
                               LLVM.Void)

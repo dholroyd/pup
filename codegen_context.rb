@@ -348,7 +348,7 @@ class CodegenContext
     putsf = @module.functions.add("puts", [CStrType], LLVM::Int32)
     # TODO: move!
     @module.functions.add("abort", [], LLVM.Void)
-    @module.functions.add("printf", [CStrType], LLVM::Int, true)
+    @module.functions.add("printf", [CStrType], LLVM::Int, :varargs => true)
 
     arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
     @puts_method = @module.functions.add("pup_puts", arg_types, ObjectPtrType)
