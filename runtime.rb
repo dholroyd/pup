@@ -75,6 +75,9 @@ class RuntimeBuilder
     @ctx.module.functions.add("extract_exception_obj",
                               [LLVM::Int8.type.pointer],
 			      ObjectPtrType)
+    @ctx.module.functions.add("pup_string_create",
+                              [CStrType],
+			      ObjectPtrType)
     @ctx.module.functions.add("pup_runtime_init", [], LLVM.Void) do |fn|
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do

@@ -146,20 +146,17 @@ end
 class StringLiteral
   def codegen(ctx)
     str = value
+    me = self
     ctx.eval_build do
       data = global_string(str)
-      obj_ptr = malloc(::Pup::Core::Types::StringObjectType, "strliteral")
-      strobj = gep(obj_ptr, LLVM.Int(0), "strobj")
-      objobj = struct_gep(strobj, 0, "objobj")
-      class_ptr = struct_gep(objobj, 0, "classptr")
-      # set the class pointer within the object header,
-      store(ctx.string_class_global, class_ptr)
-
-      data_ptr = struct_gep(strobj, 1, "data_ptr")
       src_ptr = gep(data, [LLVM.Int(0),LLVM.Int(0)], "src_ptr")
-      store(src_ptr, data_ptr)
-      objobj
+      call(ctx.module.functions["pup_string_create"], src_ptr, "str_#{me.sanitise(str)}")
     end
+  end
+
+  # derive a (shortened) string safe for use as an LLVM variable name
+  def sanitise(str)
+    str.gsub(/[^a-zA-Z0-1]+/, "_")[0, 20]
   end
 end
 
