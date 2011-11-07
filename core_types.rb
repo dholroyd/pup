@@ -41,7 +41,8 @@ ClassType = LLVM::Type.rec do |thistype|
     obj_ty,  # Since the 'Class' class is a kind of Object
     thistype.pointer,  # superclass
     CStrType,     # class name
-    MethodListEntryType.pointer  # head of the method linked list
+    MethodListEntryType.pointer,  # head of the method linked list
+    thistype.pointer   # the lexical scope of the class definition
   )
 end
 

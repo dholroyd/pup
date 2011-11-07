@@ -90,13 +90,22 @@ class VarOrInvokeExpr
     end
   end
 
+  def const?
+    ConstantNameExpr === @name
+  end
+
   def var_access?(ctx)
-    @args.nil? && @receiver.nil? && ctx.current_method.has_local?(@name.name)
+    @args.nil? && @receiver.nil? && (ctx.current_method.has_local?(@name.name) || const?)
   end
 
   def codegen_var_access(ctx)
-    local = ctx.current_method.get_local(@name.name)
-    ctx.build.load(local, "#{@name.name}_access")
+    if const?
+      self_class = ctx.build.call(ctx.module.functions["pup_class_context_from"], ctx.self_ref, "self_class")
+      ctx.build.call(ctx.module.functions["pup_const_get_required"], self_class, LLVM.Int(@name.name.to_sym.to_i), "#{@name.name}_access")
+    else
+      local = ctx.current_method.get_local(@name.name)
+      ctx.build.load(local, "#{@name.name}_access")
+    end
   end
 
   def codegen_invoke(ctx)
@@ -180,25 +189,25 @@ class ClassDef
   def codegen(ctx)
     # TODO: should be const, not local (implement const support)
     class_name = name.name
-    classref = ctx.current_method.get_or_create_local(class_name)
     classdef = nil
     class_name_ref = ctx.global_string_constant(class_name)
     superclass_ref = find_superclass(ctx)
     ctx.eval_build do
+      self_class = call(ctx.module.functions["pup_class_context_from"], ctx.self_ref, "self_class")
       classdef = call(ctx.module.functions["pup_create_class"],
                       ctx.module.globals["ClassClassInstance"],
 		      superclass_ref,
+                      self_class,
 		      class_name_ref,
                       "class_#{class_name}")
-      classref = bit_cast(classref, ClassType.pointer.pointer, "as_obj_#{class_name}")
-      store(classdef, classref)
+      call(ctx.module.functions["pup_const_set"], self_class, LLVM.Int(class_name.to_sym.to_i), bit_cast(classdef, ObjectPtrType))
     end
     # self becomes a ref to the class being defined, within the class body,
     ctx.using_self(classdef) do
       body.codegen(ctx)
     end
 
-    classref
+    classdef
   end
 
   def find_superclass(ctx)

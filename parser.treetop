@@ -35,11 +35,11 @@ grammar Pup
   end
 
   rule classdef
-    'class' white_noeol thename (white_noeol / !extends) e:extends? space_eol
+    'class' white_noeol constant (white_noeol / !extends) e:extends? space_eol
       s:( statements space )?
     'end' {
       def value
-	ClassDef.new(thename.value, e.elements ? e.value : nil, s.elements ? s.elements[0].value : nil)
+	ClassDef.new(constant.value, e.elements ? e.value : nil, s.elements ? s.elements[0].value : nil)
       end
     }
   end
@@ -293,7 +293,7 @@ grammar Pup
   end
 
   rule invoke
-    n:thename white_noeol? a:args? white_noeol? b:block? {
+    n:named_value white_noeol? a:args? white_noeol? b:block? {
       def value
 	VarOrInvokeExpr.new(n.value, a.elements ? a.value : nil, b.elements ? b.value : nil)
       end
@@ -384,12 +384,24 @@ grammar Pup
     single_quoted_string / double_quoted_string
   end
 
+  rule named_value
+    constant
+    / thename
+  end
+
+  rule constant
+    [A-Z] [A-Za-z_0-9]* {
+      def value
+	ConstantNameExpr.new(text_value)
+      end
+    }
+  end
+
   rule thename
     !"end"
     !"else"
     !"rescue"
-    # TODO seperate @att rule from other names; allow syntactic differentiation
-    '@'? [A-Za-z_] [A-Za-z_0-9]* {
+    [a-z_] [A-Za-z_0-9]* {
       def value
 	NameExpr.new(text_value)
       end

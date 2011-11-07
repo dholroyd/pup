@@ -68,7 +68,7 @@ class CodegenContext
     @module.types.add("MethodListEntry", MethodListEntryType)
 
     class_class_fwd_decl = @module.globals.add(ClassType, "ClassClassInstance")
-    class_class_fwd_decl.linkage = :internal
+    class_class_fwd_decl.linkage = :external
     
     object_class_instance = const_struct(
       # object header,
@@ -83,7 +83,9 @@ class CodegenContext
       # class name,
       object_name_ptr,
       # method list head,
-      MethodListEntryType.pointer.null_pointer
+      MethodListEntryType.pointer.null_pointer,
+      # lexical scope
+      ClassType.pointer.null
     )
     obj_class_global = global_constant(ClassType, object_class_instance, ObjectClassInstanceName)
     class_class_instance = build_class_instance("Class", obj_class_global)
@@ -128,7 +130,9 @@ class CodegenContext
       # class name,
       global_string_constant(class_name),
       # method list head,
-      meth_list_head || MethodListEntryType.pointer.null_pointer
+      meth_list_head || MethodListEntryType.pointer.null_pointer,
+      # lexical scope (TODO anything to do here?)
+      ClassType.pointer.null
     )
   end
 

@@ -57,7 +57,7 @@ class RuntimeBuilder
                               [LLVM::Int8.type.pointer],
                               ObjectPtrType)
     @ctx.module.functions.add("pup_create_class",
-                              [ClassType.pointer, ClassType.pointer, CStrType],
+                              [ClassType.pointer, ClassType.pointer, ClassType.pointer, CStrType],
 			      ClassType.pointer)
     @ctx.module.functions.add("pup_define_method",
                               [ClassType.pointer, LLVM::Int, MethodPtrType],
@@ -78,6 +78,15 @@ class RuntimeBuilder
     @ctx.module.functions.add("pup_string_create",
                               [CStrType],
 			      ObjectPtrType)
+    @ctx.module.functions.add("pup_const_get_required",
+                              [ClassType.pointer, LLVM::Int],
+			      ObjectPtrType)
+    @ctx.module.functions.add("pup_const_set",
+                              [ClassType.pointer, LLVM::Int, ObjectPtrType],
+			      LLVM.Void)
+    @ctx.module.functions.add("pup_class_context_from",
+                              [ObjectPtrType],
+			      ClassType.pointer)
     @ctx.module.functions.add("pup_runtime_init", [], LLVM.Void) do |fn|
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do

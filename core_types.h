@@ -27,6 +27,7 @@ struct Class {
 	struct Class *superclass;
 	char *name;
 	struct MethodListEntry *method_list_head;
+	struct Class *scope;  /* for Constant lookup */
 };
 
 struct String {

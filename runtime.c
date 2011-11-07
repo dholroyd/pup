@@ -10,6 +10,7 @@
 #include "exception.h"
 
 extern struct Class StringClassInstance;
+extern struct Class ClassClassInstance;
 extern struct Class ExceptionClassInstance;
 
 void obj_init(struct Object *obj, struct Class *type)
@@ -20,6 +21,7 @@ void obj_init(struct Object *obj, struct Class *type)
 
 struct Class *pup_create_class(struct Class *class_class,
                                struct Class *superclass,
+                               struct Class *scope,
 			       const char *name)
 {
 	struct Class *class = (struct Class *)malloc(sizeof(struct Class));
@@ -27,6 +29,7 @@ struct Class *pup_create_class(struct Class *class_class,
 	class->name = strdup(name);
 	class->superclass = superclass;
 	class->method_list_head = NULL;
+	class->scope = scope;
 	return class;
 }
 
@@ -147,6 +150,7 @@ static Method *find_method_in_classes(struct Class *class, const long name_sym)
 struct Object *pup_invoke(struct Object *target, const long name_sym,
                           const long argc, struct Object **argv)
 {
+	ABORTF_ON(!target, "no target for invocation of sym:%ld", name_sym);
 	struct Class *class = target->type;
 	Method *method = find_method_in_classes(class, name_sym);
 	if (!method) {
@@ -196,4 +200,90 @@ METH_IMPL(pup_puts)
 
 	// TODO return nil
 	return NULL;
+}
+
+static struct AttributeListEntry *find_attr(const struct Object *obj,
+                                     const int sym)
+{
+	struct AttributeListEntry *attr = obj->attr_list_head;
+	while (attr) {
+		if (attr->name_sym == sym) {
+			return attr;
+		}
+		attr = attr->next;
+	}
+	return NULL;
+}
+
+static struct AttributeListEntry *create_attr(const int sym,
+                                              struct Object *val,
+					      struct AttributeListEntry *next)
+{
+	struct AttributeListEntry *attr
+		= malloc(sizeof(struct AttributeListEntry));
+	attr->name_sym = sym;
+	attr->value = val;
+	attr->next = next;
+	return attr;
+}
+
+void pup_iv_set(struct Object *obj, const int sym, struct Object *val)
+{
+	struct AttributeListEntry *attr = find_attr(obj, sym);
+	// TODO: what to do about these race conditions?
+	if (attr) {
+		attr->value = val;
+	} else {
+		obj->attr_list_head= create_attr(sym, val, obj->attr_list_head);
+	}
+}
+
+struct Object *pup_iv_get(struct Object *obj, const int sym)
+{
+	struct AttributeListEntry *attr = find_attr(obj, sym);
+	if (attr) {
+		return attr->value;
+	}
+	return NULL;  /* TODO nil */
+}
+
+void pup_const_set(struct Class* clazz, const int sym, struct Object *val)
+{
+	pup_iv_set(&clazz->obj_header, sym, val);
+}
+
+struct Object *pup_const_get(struct Class *clazz, const int sym)
+{
+	struct Object *result;
+	struct Class *lookup = clazz;
+	/* TODO: while nil, rather than while NULL */
+	while ((result = pup_iv_get(&lookup->obj_header, sym)) == NULL) {
+		lookup = lookup->scope;
+		if (!lookup) break;
+	}
+	return result;
+}
+
+struct Object *pup_const_get_required(struct Class *clazz, const int sym)
+{
+	struct Object *res = pup_const_get(clazz, sym);
+	if (!res) {
+		// TODO: NameError
+		pup_raise(pup_new_runtimeerrorf("uninitialized constant sym:%ld",
+		                                sym));
+	}
+	return res;
+}
+
+/*
+ * Returns obj, if obj is a Class, or obj->type otherwise.
+ * Used when we want to make use of 'self' without caring if we are in class
+ * or instance context.
+ */
+struct Class *pup_class_context_from(struct Object *obj)
+{
+	if (obj->type == &ClassClassInstance) {
+		return (struct Class *)obj;
+	}
+	return obj->type;
 }
