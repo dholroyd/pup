@@ -12,7 +12,7 @@ struct MethodListEntry {
 struct AttributeListEntry {
 	long name_sym;
 	struct Object *value;
-	struct MethodListEntry *next;
+	struct AttributeListEntry *next;
 };
 
 struct Class;
