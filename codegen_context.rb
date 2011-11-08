@@ -4,10 +4,6 @@ module Parse
 
 class CodegenContext
 
-  ObjectClassInstanceName = "ObjectClassInstance"
-  StringClassInstanceName = "StringClassInstance"
-  ExceptionClassInstanceName = "ExceptionClassInstance"
-
   include ::Pup::Core::Types
 
   attr_accessor :invoker
@@ -33,14 +29,10 @@ class CodegenContext
     @serial = 0
     @landingpad = nil
     @excep = nil
-    @string_class_global = global_constant(ClassType, nil, StringClassInstanceName)
-    @string_class_global.linkage = :external
-    @exception_class_global = global_constant(ClassType, nil, ExceptionClassInstanceName)
-    @exception_class_global.linkage = :external
-    build_puts_meth
-    init_types
 
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
+    @runtime_builder.build_puts_meth
+    @runtime_builder.init_types
     @runtime_builder.build_runtime_init
   end
 
@@ -55,65 +47,6 @@ class CodegenContext
     str = LLVM::ConstantArray.string(value)
     name = "str#{value}" unless name
     global_constant(str, str, name).bit_cast(CStrType)
-  end
-
-  def init_types
-    object_name_ptr = global_string_constant("Object")
-
-    @module.types.add("Object", ObjectType)
-    @module.types.add("Class", ClassType)
-    @module.types.add("String", StringObjectType)
-    @module.types.add("Method", MethodType)
-    @module.types.add("AttributeListEntry", AttributeListEntryType)
-    @module.types.add("MethodListEntry", MethodListEntryType)
-
-    class_class_fwd_decl = @module.globals.add(ClassType, "ClassClassInstance")
-    class_class_fwd_decl.linkage = :external
-    
-    object_class_instance = const_struct(
-      # object header,
-      const_struct(
-	# class,
-        @module.globals["ClassClassInstance"],
-	# attribute list head
-	AttributeListEntryType.pointer.null_pointer
-      ),
-      # superclass (none, for 'Object')
-      ClassType.pointer.null_pointer,
-      # class name,
-      object_name_ptr,
-      # method list head,
-      MethodListEntryType.pointer.null_pointer,
-      # lexical scope
-      ClassType.pointer.null
-    )
-    obj_class_global = global_constant(ClassType, object_class_instance, ObjectClassInstanceName)
-    class_class_instance = build_class_instance("Class", obj_class_global)
-    class_class_fwd_decl.initializer = class_class_instance
-    string_class_instance = build_class_instance("String", obj_class_global)
-    @string_class_global.initializer = string_class_instance
-    exception_class_instance = build_class_instance("Exception", obj_class_global)
-    @exception_class_global.initializer = exception_class_instance
-
-
-    true_class_instance = build_class_instance("TrueClass", obj_class_global)
-    true_class_global = global_constant(ClassType, true_class_instance, "TrueClassInstance")
-    false_class_instance = build_class_instance("FalseClass", obj_class_global)
-    false_class_global = global_constant(ClassType, false_class_instance, "FalseClassInstance")
-
-    true_obj_instance = const_struct(
-      true_class_global,
-      AttributeListEntryType.pointer.null
-    )
-    true_global = global_constant(ObjectType, true_obj_instance, "TrueObjInstance")
-    false_obj_instance = const_struct(
-      false_class_global,
-      AttributeListEntryType.pointer.null
-    )
-    false_global = global_constant(ObjectType, false_obj_instance, "FalseObjInstance")
-
-    main_class_instance = build_class_instance("Main", obj_class_global, build_meth_list_entry(:puts, @puts_method, build_meth_list_entry(:raise, @raise_method)))
-    global_constant(ClassType, main_class_instance, "Main")
   end
 
   def build_class_instance(class_name, super_class_instance, meth_list_head=nil)
@@ -334,6 +267,15 @@ class CodegenContext
     !@landingpad.nil?
   end
 
+  def build_meth_list_entry(name, fn_ptr, next_entry = nil)
+    entry = const_struct(
+      LLVM.Int(name.to_sym.to_i),
+      fn_ptr,
+      next_entry || MethodListEntryPtrType.null_pointer
+    )
+    global_constant(MethodListEntryType, entry, "meth_entry_#{name}")
+  end
+
   private
 
   def class_ptr_from_obj_ptr(builder, obj_ptr)
@@ -348,17 +290,6 @@ class CodegenContext
     builder.cond(cmp2, then_bk, else_bk)
   end
 
-  def build_puts_meth
-    putsf = @module.functions.add("puts", [CStrType], LLVM::Int32)
-    # TODO: move!
-    @module.functions.add("abort", [], LLVM.Void)
-    @module.functions.add("printf", [CStrType], LLVM::Int, :varargs => true)
-
-    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
-    @puts_method = @module.functions.add("pup_puts", arg_types, ObjectPtrType)
-    @raise_method = @module.functions.add("pup_object_raise", arg_types, ObjectPtrType)
-  end
-
   def attach_classclass_methods(class_class_instance)
     def_method("pup_class_new") do |pup_class_new|
       body = append_block do
@@ -370,15 +301,6 @@ class CodegenContext
 	end
       end
     end
-  end
-
-  def build_meth_list_entry(name, fn_ptr, next_entry = nil)
-    entry = const_struct(
-      LLVM.Int(name.to_sym.to_i),
-      fn_ptr,
-      next_entry || MethodListEntryPtrType.null_pointer
-    )
-    global_constant(MethodListEntryType, entry, "meth_entry_#{name}")
   end
 end
 

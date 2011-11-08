@@ -6,6 +6,10 @@ class RuntimeBuilder
 
   include ::Pup::Core::Types
 
+  ObjectClassInstanceName = "ObjectClassInstance"
+  StringClassInstanceName = "StringClassInstance"
+  ExceptionClassInstanceName = "ExceptionClassInstance"
+
   def initialize(ctx)
     @ctx = ctx
   end
@@ -96,7 +100,83 @@ class RuntimeBuilder
     end
   end
 
-end
+
+  def init_types
+    @string_class_global = @ctx.global_constant(ClassType, nil, StringClassInstanceName)
+    @string_class_global.linkage = :external
+    @exception_class_global = @ctx.global_constant(ClassType, nil, ExceptionClassInstanceName)
+    @exception_class_global.linkage = :external
+
+    object_name_ptr = @ctx.global_string_constant("Object")
+
+    @ctx.module.types.add("Object", ObjectType)
+    @ctx.module.types.add("Class", ClassType)
+    @ctx.module.types.add("String", StringObjectType)
+    @ctx.module.types.add("Method", MethodType)
+    @ctx.module.types.add("AttributeListEntry", AttributeListEntryType)
+    @ctx.module.types.add("MethodListEntry", MethodListEntryType)
+
+    class_class_fwd_decl = @ctx.module.globals.add(ClassType, "ClassClassInstance")
+    class_class_fwd_decl.linkage = :external
+    
+    object_class_instance = @ctx.const_struct(
+      # object header,
+      @ctx.const_struct(
+	# class,
+        @ctx.module.globals["ClassClassInstance"],
+	# attribute list head
+	AttributeListEntryType.pointer.null_pointer
+      ),
+      # superclass (none, for 'Object')
+      ClassType.pointer.null_pointer,
+      # class name,
+      object_name_ptr,
+      # method list head,
+      MethodListEntryType.pointer.null_pointer,
+      # lexical scope
+      ClassType.pointer.null
+    )
+    obj_class_global = @ctx.global_constant(ClassType, object_class_instance, ObjectClassInstanceName)
+    class_class_instance = @ctx.build_class_instance("Class", obj_class_global)
+    class_class_fwd_decl.initializer = class_class_instance
+    string_class_instance = @ctx.build_class_instance("String", obj_class_global)
+    @string_class_global.initializer = string_class_instance
+    exception_class_instance = @ctx.build_class_instance("Exception", obj_class_global)
+    @exception_class_global.initializer = exception_class_instance
+
+
+    true_class_instance = @ctx.build_class_instance("TrueClass", obj_class_global)
+    true_class_global = @ctx.global_constant(ClassType, true_class_instance, "TrueClassInstance")
+    false_class_instance = @ctx.build_class_instance("FalseClass", obj_class_global)
+    false_class_global = @ctx.global_constant(ClassType, false_class_instance, "FalseClassInstance")
+
+    true_obj_instance = @ctx.const_struct(
+      true_class_global,
+      AttributeListEntryType.pointer.null
+    )
+    true_global = @ctx.global_constant(ObjectType, true_obj_instance, "TrueObjInstance")
+    false_obj_instance = @ctx.const_struct(
+      false_class_global,
+      AttributeListEntryType.pointer.null
+    )
+    false_global = @ctx.global_constant(ObjectType, false_obj_instance, "FalseObjInstance")
+
+    main_class_instance = @ctx.build_class_instance("Main", obj_class_global, @ctx.build_meth_list_entry(:puts, @puts_method, @ctx.build_meth_list_entry(:raise, @raise_method)))
+    @ctx.global_constant(ClassType, main_class_instance, "Main")
+  end
+
+  def build_puts_meth
+    putsf = @ctx.module.functions.add("puts", [CStrType], LLVM::Int32)
+    # TODO: move!
+    @ctx.module.functions.add("abort", [], LLVM.Void)
+    @ctx.module.functions.add("printf", [CStrType], LLVM::Int, :varargs => true)
+
+    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
+    @puts_method = @ctx.module.functions.add("pup_puts", arg_types, ObjectPtrType)
+    @raise_method = @ctx.module.functions.add("pup_object_raise", arg_types, ObjectPtrType)
+  end
 
 end
-end
+
+end  # module Runtime
+end  # module Pup
