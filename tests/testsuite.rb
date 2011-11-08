@@ -20,3 +20,6 @@ end
 test.raise_string do
   stdout.should match /success/
 end
+test.globals do
+  stdout.split(/\s/).should == %w{Object Class String TrueClass FalseClass Exception}
+end

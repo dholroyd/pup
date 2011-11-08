@@ -1,0 +1,6 @@
+puts Object.to_s
+puts Class.to_s
+puts String.to_s
+puts TrueClass.to_s
+puts FalseClass.to_s
+puts Exception.to_s

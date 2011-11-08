@@ -41,6 +41,13 @@ class RuntimeBuilder
     sym = LLVM.Int(:initialize.to_i)
     pup_object_initialize = @ctx.module.functions["pup_object_initialize"]
     call_define_method(object_class_instance, sym, pup_object_initialize)
+
+    def_global_const(:Class, "ClassClassInstance")
+    def_global_const(:Object, "ObjectClassInstance")
+    def_global_const(:TrueClass, "TrueClassInstance")
+    def_global_const(:FalseClass, "FalseClassInstance")
+    def_global_const(:String, "StringClassInstance")
+    def_global_const(:Exception, "ExceptionClassInstance")
   end
 
   def call_define_method(class_instance, sym, fn)
@@ -132,7 +139,7 @@ class RuntimeBuilder
       # class name,
       object_name_ptr,
       # method list head,
-      MethodListEntryType.pointer.null_pointer,
+      @ctx.build_meth_list_entry(:to_s, @class_to_s_method),
       # lexical scope
       ClassType.pointer.null
     )
@@ -174,6 +181,15 @@ class RuntimeBuilder
     arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
     @puts_method = @ctx.module.functions.add("pup_puts", arg_types, ObjectPtrType)
     @raise_method = @ctx.module.functions.add("pup_object_raise", arg_types, ObjectPtrType)
+    @class_to_s_method = @ctx.module.functions.add("pup_class_to_s", arg_types, ObjectPtrType)
+  end
+
+  private
+
+  def def_global_const(sym, global_name)
+    global = @ctx.module.globals[global_name]
+    raise "No global #{global_name}" unless global
+    @ctx.build.call(@ctx.module.functions["pup_const_set"], @ctx.module.globals["Main"], LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
   end
 
 end

@@ -13,8 +13,8 @@ end
 class Tester
   def method_missing(name, *args, &block)
     Dir.chdir("tests") do
-      raise unless system("../pup #{name}.pup")
-      raise unless system("llvm-ld-2.9 -disable-opt -disable-inlining -native #{name}.bc ../runtime.bc ../exception.bc ../raise.bc ../string.bc")
+      raise "pup failed" unless system("../pup #{name}.pup")
+      raise "llvmld failed" unless system("llvm-ld-2.9 -disable-opt -disable-inlining -native #{name}.bc ../runtime.bc ../exception.bc ../raise.bc ../string.bc ../class.bc")
       res = Result.new
       res.status = Open4::popen4("./a.out") do |pid, stdin, stdout, stderr|
 	stdin.close

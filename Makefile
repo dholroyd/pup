@@ -3,7 +3,7 @@ clang=clang
 llvmc=llvmc-2.9
 tt=/var/lib/gems/1.8/gems/treetop-1.4.10/bin/tt
 
-runit:	parser.rb runtime.bc exception.bc raise.bc string.bc
+runit:	parser.rb runtime.bc exception.bc raise.bc string.bc class.bc
 	ruby -I tests tests/testsuite.rb
 
 
@@ -21,6 +21,9 @@ string.bc:	string.c core_types.h
 
 raise.bc:	raise.c core_types.h abortf.h
 	${clang} -O0 -Wall -Werror -g -c -fexceptions -emit-llvm raise.c -o raise.bc
+
+class.bc:	class.c runtime.c
+	${clang} -O0 -Wall -Werror -g -c -fexceptions -emit-llvm class.c -o class.bc
 
 parser.rb:	parser.treetop
 	${tt} parser.treetop
