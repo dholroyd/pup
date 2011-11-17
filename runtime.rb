@@ -241,9 +241,6 @@ class RuntimeBuilder
     @puts_method = @ctx.module.functions.add("pup_puts", arg_types, ObjectPtrType)
     @raise_method = @ctx.module.functions.add("pup_object_raise", arg_types, ObjectPtrType)
     @class_to_s_method = @ctx.module.functions.add("pup_class_to_s", arg_types, ObjectPtrType)
-    @exception_allocate = @ctx.module.functions.add("pup_exception_allocate",
-                              arg_types,
-			      ObjectPtrType)
     @exception_initialize = @ctx.module.functions.add("pup_exception_initialize",
                               arg_types,
 			      ObjectPtrType)
