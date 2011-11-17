@@ -78,7 +78,6 @@ class RuntimeBuilder
     @ctx.module.functions.add("pup_define_method",
                               [ClassType.pointer, LLVM::Int, MethodPtrType],
 			      LLVM.Void)
-    @pup_define_method = @ctx.module.functions["pup_define_method"]
     declare_meth_impl_func("pup_object_allocate")
     declare_meth_impl_func("pup_object_initialize")
     @ctx.module.functions.add("pup_invoke",
