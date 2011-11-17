@@ -101,8 +101,8 @@ class VarOrInvokeExpr
 
   def codegen_var_access(ctx)
     if const?
-      self_class = ctx.build.call(ctx.module.functions["pup_class_context_from"], ctx.self_ref, "self_class")
-      ctx.build.call(ctx.module.functions["pup_const_get_required"], self_class, LLVM.Int(@name.name.to_sym.to_i), "#{@name.name}_access")
+      self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
+      ctx.build_call.pup_const_get_required(self_class, LLVM.Int(@name.name.to_sym.to_i), "#{@name.name}_access")
     else
       local = ctx.current_method.get_local(@name.name)
       ctx.build.load(local, "#{@name.name}_access")
@@ -160,7 +160,7 @@ class StringLiteral
     ctx.eval_build do
       data = global_string(str)
       src_ptr = gep(data, [LLVM.Int(0),LLVM.Int(0)], "src_ptr")
-      call(ctx.module.functions["pup_string_create"], src_ptr, "str_#{me.sanitise(str)}")
+      ctx.build_call.pup_string_create(src_ptr, "str_#{me.sanitise(str)}")
     end
   end
 
@@ -194,14 +194,14 @@ class ClassDef
     class_name_ref = ctx.global_string_constant(class_name)
     superclass_ref = find_superclass(ctx)
     ctx.eval_build do
-      self_class = call(ctx.module.functions["pup_class_context_from"], ctx.self_ref, "self_class")
-      classdef = call(ctx.module.functions["pup_create_class"],
+      self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
+      classdef = ctx.build_call.pup_create_class(
                       ctx.module.globals["ClassClassInstance"],
 		      superclass_ref,
                       self_class,
 		      class_name_ref,
                       "class_#{class_name}")
-      call(ctx.module.functions["pup_const_set"], self_class, LLVM.Int(class_name.to_sym.to_i), bit_cast(classdef, ObjectPtrType))
+      ctx.build_call.pup_const_set(self_class, LLVM.Int(class_name.to_sym.to_i), bit_cast(classdef, ObjectPtrType))
     end
     # self becomes a ref to the class being defined, within the class body,
     ctx.using_self(classdef) do
@@ -255,7 +255,7 @@ class MethodDef
                            ctx.module.globals["ClassClassInstance"],
                            when_class, when_not_class)
     ctx.with_builder_at_end(when_not_class) do |b|
-      b.call(ctx.module.functions["puts"], ctx.global_string_constant("'self' is not a Class instance"))
+      ctx.build_call.puts(ctx.global_string_constant("'self' is not a Class instance"))
     end
     ctx.build.position_at_end(when_class)
     return ctx.build.bit_cast(val, ClassType.pointer)
@@ -286,7 +286,7 @@ class BeginStmt
 		   dwarf_ex,
 		   ctx.module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
 		   ctx.module.globals["ExceptionClassInstance"], "sel")
-      excep = ctx.build.call(ctx.module.functions["extract_exception_obj"], dwarf_ex, "excep")
+      excep = ctx.build_call.extract_exception_obj(dwarf_ex, "excep")
       excep_type = ctx.build.load(ctx.build.struct_gep(excep, 0), "excep_type")
       excep_type_asobj = ctx.build.bit_cast(excep_type, ::Pup::Core::Types::ObjectPtrType, "excep_type_asobj")
       ctx.eh_handle(excep) do

@@ -53,7 +53,7 @@ class RuntimeBuilder
   end
 
   def call_define_method(class_instance, sym, fn)
-    @ctx.build.call(@pup_define_method, class_instance, sym, fn)
+    @ctx.build_call.pup_define_method(class_instance, sym, fn)
   end
 
   def build_runtime_init
@@ -260,7 +260,7 @@ class RuntimeBuilder
   def def_global_const(sym, global_name)
     global = @ctx.module.globals[global_name]
     raise "No global #{global_name}" unless global
-    @ctx.build.call(@ctx.module.functions["pup_const_set"], @ctx.module.globals["Main"], LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
+    @ctx.build_call.pup_const_set(@ctx.module.globals["Main"], LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
   end
 
 end

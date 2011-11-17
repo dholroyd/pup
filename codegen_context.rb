@@ -204,7 +204,7 @@ class CodegenContext
 	attr_list_head = b.struct_gep(main_obj, 1, "attr_list_head")
 	b.store(AttributeListEntryType.pointer.null, attr_list_head)
 
-	ret_val = build.call(@module.functions["pup_runtime_init"])
+	ret_val = build_call.pup_runtime_init()
 
 	ret_val = build.invoke(@module.functions["pup_main"], [main_obj, LLVM.Int(0), ArgsType.null], exit_block, catch_block)
       end
@@ -214,7 +214,7 @@ class CodegenContext
 	             excep,
 	             @module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
 	             @module.globals["ExceptionClassInstance"], "sel")
-	b.call(@module.functions["pup_handle_uncaught_exception"], excep)
+	build_call.pup_handle_uncaught_exception(excep)
 	b.br(exit_block)
       end
       with_builder_at_end(exit_block) do |b|
