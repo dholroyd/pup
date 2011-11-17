@@ -128,7 +128,7 @@ class VarOrInvokeExpr
     sym = LLVM.Int(name.name.to_sym.to_i)
     if ctx.eh_active?
       # block following invocation; continue here if no exception raised
-      bkcontinue = ctx.current_method.function.basic_blocks.append("#{@name.name}_continue")
+      bkcontinue = ctx.current_method.function.basic_blocks.append("invoke_#{@name.name}_continue")
       res = ctx.build.invoke(ctx.invoker,
                        [r, sym, LLVM::Int(arg_count), argv],
                        bkcontinue, ctx.landingpad,
@@ -270,48 +270,86 @@ class BeginStmt
     if !rescuebks.empty?
       landingpad = ctx.current_method.function.basic_blocks.append("landingpad")
     end
-    # block for code following the begin
-    if ensurebk
-      bkensure = ctx.current_method.function.basic_blocks.append("ensure")
-      bkcontinue = ctx.current_method.function.basic_blocks.append("continue")
-      #  branch to ensure code from begin/rescue blocks
-      bkout = bkensure
-    else
-      bkensure = nil
-      bkcontinue = ctx.current_method.function.basic_blocks.append("continue")
-      # branch to code following begin-stmt from begin/rescue blocks
-      bkout = bkcontinue
-    end
 
+    begin_block = nil
     ctx.eh_begin(landingpad) do
       v = beginbk.codegen(ctx)
       ctx.build.store(v, result)
-      ctx.build.br(bkout)
+      begin_block = ctx.build.insert_block
+      # will add a br to after_beginblock later, once that block has been appended
     end
+    dwarf_ex = nil
+    rescue_impls = []
     ctx.with_builder_at_end(landingpad) do |b|
-      excep = b.call(ctx.module.functions["llvm.eh.exception"], "excep")
+      dwarf_ex = b.call(ctx.module.functions["llvm.eh.exception"], "dwarf_ex")
       sel = b.call(ctx.module.functions["llvm.eh.selector"],
-		   excep,
+		   dwarf_ex,
 		   ctx.module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
 		   ctx.module.globals["ExceptionClassInstance"], "sel")
+      excep = ctx.build.call(ctx.module.functions["extract_exception_obj"], dwarf_ex, "excep")
+      excep_type = ctx.build.load(ctx.build.struct_gep(excep, 0), "excep_type")
+      excep_type_asobj = ctx.build.bit_cast(excep_type, ::Pup::Core::Types::ObjectPtrType, "excep_type_asobj")
       ctx.eh_handle(excep) do
-	rescuebks.first.codegen(ctx)
+	rescuebks.each do |rescuebk|
+	  rescuebk.codegen(ctx, result, excep, excep_type_asobj, rescue_impls)
+	end
       end
-      b.br(bkout)
+      ctx.build_call.pup_rethrow_uncaught_exception(dwarf_ex)
+      ctx.build.ret(::Pup::Core::Types::ObjectPtrType.null)
     end
+
+    bkout = ctx.current_method.function.basic_blocks.append("after_beginblock")
+    rescue_impls.each do |rescue_impl_bk|
+      ctx.build.position_at_end(rescue_impl_bk)
+      ctx.build.br(bkout)
+    end
+    ctx.build.position_at_end(begin_block)
+    ctx.build.br(bkout)
     ctx.build.position_at_end(bkout)
     ctx.build.load(result, "begin_result")
   end
 end
 
 class RescueBlock
-  def codegen(ctx)
+  def codegen(ctx, result, excep, excep_type_asobj, rescue_impls)
+    bknot_matched = nil
+    rescue_types = types || [VarOrInvokeExpr.new(ConstantNameExpr.new("RuntimeError"), nil, nil)]
+    type_tests = []
+    rescue_types.each do |ex_type|
+      expected_type = ex_type.codegen(ctx)
+      type_match = ctx.build_call.pup_is_descendant_or_same(expected_type, excep_type_asobj, "type_match")
+      bknot_matched = ctx.current_method.function.basic_blocks.append(block_name_not_matched(ex_type))
+      # we will append a 'br' to each block once we've created the
+      # after_beginblock block that will be the branch target,
+      type_tests << [ctx.build.insert_block, type_match, bknot_matched]
+      ctx.build.position_at_end(bknot_matched)
+    end
+    next_rescue_block = ctx.build.insert_block
+    bkrescue = ctx.current_method.function.basic_blocks.append("rescue_impl")
+    rescue_impls << bkrescue
+    type_tests.each do |block, type_match, bknot_matched|
+      ctx.build.position_at_end(block)
+      ctx.build.cond(type_match, bkrescue, bknot_matched)
+    end
+    ctx.build.position_at_end(bkrescue)
     if var_name
       var = ctx.current_method.get_or_create_local(var_name.name)
-      excep = ctx.build.call(ctx.module.functions["extract_exception_obj"], ctx.excep)
       ctx.build.store(excep, var)
     end
-    statements.codegen(ctx)
+    v = statements.codegen(ctx)
+    ctx.build.store(v, result)
+
+    ctx.build.position_at_end(next_rescue_block)
+  end
+
+  # derive a block name that will be nicely readable in the common case that
+  # the exception type spec is in terms of a const (i.e. an Exception class name)
+  def block_name_not_matched(ex_type)
+    if VarOrInvokeExpr === ex_type && ConstantNameExpr === ex_type.name
+      "rescue_type_not_#{ex_type.name.name}"
+    else
+      "rescue_type_not_matched"
+    end
   end
 end
 

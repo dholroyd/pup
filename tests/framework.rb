@@ -14,7 +14,9 @@ class Tester
   def method_missing(name, *args, &block)
     Dir.chdir("tests") do
       raise "pup failed" unless system("../pup #{name}.pup")
-      raise "llvmld failed" unless system("llvm-ld-2.9 -disable-opt -disable-inlining -native #{name}.bc ../runtime.bc ../exception.bc ../raise.bc ../string.bc ../class.bc")
+      raise "llc failed" unless system("llc-2.9 #{name}.bc -o #{name}.S")
+      raise "as failed" unless system("as #{name}.S -o #{name}.o")
+      raise "gcc failed" unless system("gcc #{name}.o ../runtime.o ../exception.o ../raise.o ../string.o ../class.o")
       res = Result.new
       res.status = Open4::popen4("./a.out") do |pid, stdin, stdout, stderr|
 	stdin.close
@@ -28,7 +30,7 @@ class Tester
 	  res.status.exitstatus.should == res.expected_exitstatus
 	end
       ensure
-	FileUtils.rm ["#{name}.bc", "a.out", "a.out.bc"]
+	FileUtils.rm ["#{name}.bc", "#{name}.S", "#{name}.o", "a.out"]
       end
     end
   end

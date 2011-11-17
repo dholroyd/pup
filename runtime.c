@@ -54,14 +54,16 @@ void pup_define_method(struct Class *class, const long name_sym, Method *method)
 	*pos = new;
 }
 
-
-
 METH_IMPL(pup_object_allocate)
 {
 	struct Object *obj = (struct Object *)malloc(sizeof(struct Object));
-	obj->type = (struct Class *)target;
-	obj->attr_list_head = NULL;
+	obj_init(obj, (struct Class *)target);
 	return obj;
+}
+
+struct Object *pup_create_object(struct Class *type)
+{
+	return pup_object_allocate((struct Object *)type, 0, NULL);
 }
 
 /*
@@ -87,7 +89,7 @@ const char *pup_type_name_of(const struct Object *obj)
 	return obj->type->name;
 }
 
-struct Object *pup_string_new_cstr(char *str)
+struct Object *pup_string_new_cstr(const char *str)
 {
 	struct String *string = malloc(sizeof(struct String));
 	if (!malloc) {
@@ -169,8 +171,10 @@ int pup_is_class(const struct Object *obj, const struct Class *class)
 int pup_is_descendant_or_same(const struct Class *ancestor,
                               const struct Class *descendant)
 {
-	for (const struct Class *next = ancestor; next; next=next->superclass) {
-		if (next == descendant) {
+	ABORT_ON(!ancestor, "ancestor must not be NULL");
+	ABORT_ON(!descendant, "descendant must not be NULL");
+	for (const struct Class *next = descendant; next; next=next->superclass) {
+		if (next == ancestor) {
 			return true;
 		}
 	}
@@ -183,7 +187,10 @@ char *pup_stringify(struct Object *obj)
 		return strdup(((struct String *)obj)->value);
 	}
 	if (pup_is_class(obj, &ExceptionClassInstance)) {
-		return strdup(((struct Exception *)obj)->message);
+		const char *msg = exception_text(obj);
+		if (msg) {
+			return strdup(msg);
+		}
 	}
 	char buf[1024];
 	pup_default_obj_cstr(obj, buf, sizeof(buf));

@@ -20,9 +20,11 @@ static uint64_t pup_unwindclass
 	| ((uint64_t)'\000');
 
 struct PupUnwindException {
-	struct Exception *pup_exception;
+	struct Object *pup_exception;
 	struct _Unwind_Exception unwindException;
 };
+
+extern struct Class ExceptionClassInstance;
 
 static void pup_uwind_exception_cleanup(
 	const _Unwind_Reason_Code reason,
@@ -34,7 +36,7 @@ static void pup_uwind_exception_cleanup(
 }
 
 static struct _Unwind_Exception *create_unwind_exception(
-	struct Exception *pup_exception_obj
+	struct Object *pup_exception_obj
 ) {
 	size_t size = sizeof(struct PupUnwindException);
 
@@ -46,7 +48,7 @@ static struct _Unwind_Exception *create_unwind_exception(
 	return &(ret->unwindException);
 }
 
-struct Exception *extract_exception_obj(
+struct Object *extract_exception_obj(
 	const struct _Unwind_Exception *exceptionObject
 ) {
 	// TODO: move somewere sensible?
@@ -58,7 +60,7 @@ struct Exception *extract_exception_obj(
 	return ue->pup_exception;
 }
 
-void pup_raise(struct Exception *pup_exception)
+void pup_raise(struct Object *pup_exception)
 {
 	struct _Unwind_Exception *e = create_unwind_exception(pup_exception);
 	_Unwind_Reason_Code reason = _Unwind_RaiseException(e);
@@ -66,6 +68,12 @@ void pup_raise(struct Exception *pup_exception)
 	ABORTF("_Unwind_RaiseException() returned with %d", reason);
 }
 
+void pup_rethrow_uncaught_exception(struct _Unwind_Exception *dw_excep)
+{
+	_Unwind_Reason_Code reason = _Unwind_RaiseException(dw_excep);
+	ABORTF("Unexpectedly failed to rethrow exception; reason code:%d",
+	       reason);
+}
 
 /// read a uleb128 encoded value and advance pointer 
 /// See Variable Length Data in: 
@@ -236,8 +244,6 @@ static bool handle_action_value(int64_t *resultAction,
 	{
 		return false;
 	}
-	struct Exception* excp = extract_exception_obj(exceptionObject);
-	struct Class *type = excp->obj_header.type;
 
 	const uint8_t *actionPos = (uint8_t*) action_table_entry,
 	              *tempActionPos;
@@ -254,11 +260,15 @@ static bool handle_action_value(int64_t *resultAction,
 
 		ABORT_ON(typeOffset < 0,
 		         "handleActionValue(...):filters are not supported.");
-
 		// Note: A typeOffset == 0 implies that a cleanup
 		//       llvm.eh.selector argument has been matched.
 		if ((typeOffset > 0) &&
-		    (pup_is_descendant_or_same(type, exception_class_table[-typeOffset])))
+		     true)  /* TODO: table contents are not as expected
+				and trying to test the table entry segfaults
+				for me.  Since we currently just catch all
+				exceptions and defer real type-testing to
+				runtime, we can get away with '&& true' here*/
+		    //(pup_is_descendant_or_same(type, exception_class_table[-typeOffset])))
 		{
 		    *resultAction = i + 1;
 		    return true;
@@ -316,8 +326,11 @@ static _Unwind_Reason_Code handle_lsda(const uint8_t *lsda,
 	uint8_t ttypeEncoding = *lsda++;
 	if (ttypeEncoding != DW_EH_PE_omit) {
 		uintptr_t classInfoOffset = readULEB128(&lsda);
-		// FIXME: why is this 4-byte fudge needed?
-		exception_class_table = (struct Class**) (lsda + classInfoOffset + 4);
+		// exception_class_table points just past the end of the array
+		// FIXME: the resulting table entries seem to be incorrect,
+		//        which must mean I've done something wrong!  (only 32
+		//        bits of the address; on my 64bit machine?)
+		exception_class_table = (struct Class**) (lsda + classInfoOffset);
 	}
 	/* Walk call-site table looking for range that includes current PC. */
 	uint8_t         callSiteEncoding = *lsda++;
@@ -334,7 +347,7 @@ static _Unwind_Reason_Code handle_lsda(const uint8_t *lsda,
 			continue; /* no landing pad for this entry */
 		}
 		uintptr_t action_table_entry = 0;
-		// don't consider actions (ensure-blocks) for foreign
+		// don't consider actions (rescue-blocks) for foreign
 		// exceptions
 		if (!is_foreign_unwindclass(unwindclass) && callsite.action) {
 			action_table_entry = action_table_start + callsite.action - 1;

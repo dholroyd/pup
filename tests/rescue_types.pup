@@ -1,0 +1,9 @@
+begin
+  raise StandardError.new("success")
+rescue  # RuntimeError by default
+  puts "failure"
+rescue StandardError => e
+  puts e.message
+rescue Exception
+  puts "failure"
+end

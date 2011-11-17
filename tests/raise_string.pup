@@ -2,5 +2,5 @@ begin
   raise("success")
   puts("failure")
 rescue => e
-  puts(e)
+  puts(e.message)
 end

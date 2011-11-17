@@ -4,12 +4,14 @@
 
 void obj_init(struct Object *obj, struct Class *type);
 
+struct Object *pup_create_object(struct Class *type);
+
 int pup_is_descendant_or_same(const struct Class *ancestor,
                               const struct Class *descendant);
 
 const char *pup_type_name_of(const struct Object *obj);
 
-struct Object *pup_string_new_cstr(char *str);
+struct Object *pup_string_new_cstr(const char *str);
 
 int pup_is_class(const struct Object *obj, const struct Class *class);
 

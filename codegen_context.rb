@@ -7,7 +7,7 @@ class CodegenContext
   include ::Pup::Core::Types
 
   attr_accessor :invoker
-  attr_reader :module, :runtime_builder, :string_class_global, :landingpad
+  attr_reader :module, :runtime_builder, :string_class_global, :landingpad, :block
   # reference to the LLVM Value for the current exception being handled, if any
   attr_reader :excep
 
@@ -30,6 +30,7 @@ class CodegenContext
     @landingpad = nil
     @excep = nil
 
+    @call_sugar = CallSugar.new(self)
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
     @runtime_builder.build_puts_meth
     @runtime_builder.init_types
@@ -247,6 +248,10 @@ class CodegenContext
     build.call(invoker, receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
   end
 
+  def build_call
+    @call_sugar
+  end
+
   def eh_begin(landingpad)
     last_landingpad = @landingpad
     @landingpad = landingpad
@@ -301,6 +306,18 @@ class CodegenContext
 	end
       end
     end
+  end
+end
+
+class CallSugar
+  def initialize(ctx)
+    @ctx = ctx
+  end
+
+  def method_missing(name, *args)
+    fun = @ctx.module.functions[name]
+    raise "no module function #{name.inspect} currently defined" unless fun
+    @ctx.build.call(fun, *args);
   end
 end
 
