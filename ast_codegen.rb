@@ -78,6 +78,7 @@ class AssignExpr
     lhs = ctx.current_method.get_or_create_local(left.name)
     rhs = right.codegen(ctx)
     ctx.build.store(rhs, lhs)
+    rhs
   end
 end
 
