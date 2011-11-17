@@ -42,7 +42,7 @@ class IfStmt
     bkcontinue = ctx.current_method.function.basic_blocks.append("ifcontinue")
     ctx.with_builder_at_end(bkcond) do |b|
       val = cond.codegen(ctx)
-      cmp = b.icmp(:eq, val, ctx.module.globals["FalseObjInstance"], "is_false")
+      cmp = b.icmp(:eq, val, ctx.global.FalseObjInstance, "is_false")
       b.cond(cmp, bkelse, bkthen)
     end
     ctx.with_builder_at_end(bkthen) do |b|
@@ -177,9 +177,9 @@ end
 class BoolLiteral
   def codegen(ctx)
     if true?
-      ctx.module.globals["TrueObjInstance"]
+      ctx.global.TrueObjInstance
     else
-      ctx.module.globals["FalseObjInstance"]
+      ctx.global.FalseObjInstance
     end
   end
 end
@@ -196,7 +196,7 @@ class ClassDef
     ctx.eval_build do
       self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
       classdef = ctx.build_call.pup_create_class(
-                      ctx.module.globals["ClassClassInstance"],
+                      ctx.global.ClassClassInstance,
 		      superclass_ref,
                       self_class,
 		      class_name_ref,
@@ -215,7 +215,7 @@ class ClassDef
     if extends
       throw "TODO: implement lookup of superclass by name (i.e. #{extends.inspect})"
     else
-      ctx.module.globals["ObjectClassInstance"]
+      ctx.global.ObjectClassInstance
     end
   end
 end
@@ -252,7 +252,7 @@ class MethodDef
     when_not_class = ctx.current_method.function.basic_blocks.append("when_not_class")
     ctx.gen_if_instance_of(ctx.build,
                            val,
-                           ctx.module.globals["ClassClassInstance"],
+                           ctx.global.ClassClassInstance,
                            when_class, when_not_class)
     ctx.with_builder_at_end(when_not_class) do |b|
       ctx.build_call.puts(ctx.global_string_constant("'self' is not a Class instance"))
@@ -285,7 +285,7 @@ class BeginStmt
       sel = b.call(ctx.module.functions["llvm.eh.selector"],
 		   dwarf_ex,
 		   ctx.module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-		   ctx.module.globals["ExceptionClassInstance"], "sel")
+		   ctx.global.ExceptionClassInstance, "sel")
       excep = ctx.build_call.extract_exception_obj(dwarf_ex, "excep")
       excep_type = ctx.build.load(ctx.build.struct_gep(excep, 0), "excep_type")
       excep_type_asobj = ctx.build.bit_cast(excep_type, ::Pup::Core::Types::ObjectPtrType, "excep_type_asobj")

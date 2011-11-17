@@ -30,6 +30,7 @@ class CodegenContext
     @excep = nil
 
     @call_sugar = CallSugar.new(self)
+    @global_sugar = GlobalSugar.new(self)
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
     @runtime_builder.build_puts_meth
     @runtime_builder.init_types
@@ -55,7 +56,7 @@ class CodegenContext
       # object header,
       const_struct(
 	# this.class
-        @module.globals["ClassClassInstance"],
+        global.ClassClassInstance,
 	# attribute list head
 	AttributeListEntryType.pointer.null_pointer
       ),
@@ -199,7 +200,7 @@ class CodegenContext
       with_builder_at_end(entry) do |b|
 	main_obj = b.alloca(ObjectType, "main_obj")
 	main_obj_class = b.struct_gep(main_obj, 0, "main_obj_class")
-	b.store(@module.globals["Main"], main_obj_class)
+	b.store(global.Main, main_obj_class)
 	attr_list_head = b.struct_gep(main_obj, 1, "attr_list_head")
 	b.store(AttributeListEntryType.pointer.null, attr_list_head)
 
@@ -212,7 +213,7 @@ class CodegenContext
 	sel = b.call(@module.functions["llvm.eh.selector"],
 	             excep,
 	             @module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-	             @module.globals["ExceptionClassInstance"], "sel")
+	             global.ExceptionClassInstance, "sel")
 	build_call.pup_handle_uncaught_exception(excep)
 	b.br(exit_block)
       end
@@ -249,6 +250,10 @@ class CodegenContext
 
   def build_call
     @call_sugar
+  end
+
+  def global
+    @global_sugar
   end
 
   def eh_begin(landingpad)
@@ -317,6 +322,18 @@ class CallSugar
     fun = @ctx.module.functions[name]
     raise "no module function #{name.inspect} currently defined" unless fun
     @ctx.build.call(fun, *args);
+  end
+end
+
+class GlobalSugar
+  def initialize(ctx)
+    @ctx = ctx
+  end
+
+  def method_missing(name, *args)
+    global = @ctx.module.globals[name]
+    raise "no module global #{name.inspect} currently defined" unless global
+    global
   end
 end
 

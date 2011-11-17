@@ -28,7 +28,7 @@ class RuntimeBuilder
 	end
       end
     end
-    class_class_instance = @ctx.module.globals["ClassClassInstance"] || fail
+    class_class_instance = @ctx.global.ClassClassInstance
     sym = LLVM.Int(:new.to_i)
     call_define_method(class_class_instance, sym, fn)
 
@@ -36,7 +36,7 @@ class RuntimeBuilder
     pup_object_allocate = @ctx.module.functions["pup_object_allocate"]
     call_define_method(class_class_instance, sym, pup_object_allocate)
 
-    object_class_instance = @ctx.module.globals["ObjectClassInstance"] || fail
+    object_class_instance = @ctx.global.ObjectClassInstance
 
     sym = LLVM.Int(:initialize.to_i)
     pup_object_initialize = @ctx.module.functions["pup_object_initialize"]
@@ -167,7 +167,7 @@ class RuntimeBuilder
       # object header,
       @ctx.const_struct(
 	# class,
-        @ctx.module.globals["ClassClassInstance"],
+        @ctx.global.ClassClassInstance,
 	# attribute list head
 	AttributeListEntryType.pointer.null_pointer
       ),
@@ -255,7 +255,7 @@ class RuntimeBuilder
   def def_global_const(sym, global_name)
     global = @ctx.module.globals[global_name]
     raise "No global #{global_name}" unless global
-    @ctx.build_call.pup_const_set(@ctx.module.globals["Main"], LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
+    @ctx.build_call.pup_const_set(@ctx.global.Main, LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
   end
 
 end
