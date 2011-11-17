@@ -6,7 +6,6 @@ class CodegenContext
 
   include ::Pup::Core::Types
 
-  attr_accessor :invoker
   attr_reader :module, :runtime_builder, :string_class_global, :landingpad, :block
   # reference to the LLVM Value for the current exception being handled, if any
   attr_reader :excep
@@ -245,7 +244,7 @@ class CodegenContext
   #  argc - ruby fixnum - the number of arguments in the argv array
   def build_simple_method_invoke_argv(receiver, method_name, argv, argc)
     sym = LLVM.Int(method_name.to_sym.to_i)
-    build.call(invoker, receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
+    build_call.pup_invoke(receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
   end
 
   def build_call

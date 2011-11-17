@@ -81,7 +81,7 @@ class RuntimeBuilder
     @pup_define_method = @ctx.module.functions["pup_define_method"]
     declare_meth_impl_func("pup_object_allocate")
     declare_meth_impl_func("pup_object_initialize")
-    @ctx.invoker = @ctx.module.functions.add("pup_invoke",
+    @ctx.module.functions.add("pup_invoke",
                               [ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
 			      ObjectPtrType)
     @ctx.module.functions.add("extract_exception_obj",
