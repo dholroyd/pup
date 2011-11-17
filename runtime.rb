@@ -79,12 +79,8 @@ class RuntimeBuilder
                               [ClassType.pointer, LLVM::Int, MethodPtrType],
 			      LLVM.Void)
     @pup_define_method = @ctx.module.functions["pup_define_method"]
-    @ctx.module.functions.add("pup_object_allocate",
-                              [ObjectPtrType, LLVM::Int, ArgsType],
-			      ObjectPtrType)
-    @ctx.module.functions.add("pup_object_initialize",
-                              [ObjectPtrType, LLVM::Int, ArgsType],
-			      ObjectPtrType)
+    declare_meth_impl_func("pup_object_allocate")
+    declare_meth_impl_func("pup_object_initialize")
     @ctx.invoker = @ctx.module.functions.add("pup_invoke",
                               [ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
 			      ObjectPtrType)
@@ -237,22 +233,20 @@ class RuntimeBuilder
     @ctx.module.functions.add("abort", [], LLVM.Void)
     @ctx.module.functions.add("printf", [CStrType], LLVM::Int, :varargs => true)
 
-    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
-    @puts_method = @ctx.module.functions.add("pup_puts", arg_types, ObjectPtrType)
-    @raise_method = @ctx.module.functions.add("pup_object_raise", arg_types, ObjectPtrType)
-    @class_to_s_method = @ctx.module.functions.add("pup_class_to_s", arg_types, ObjectPtrType)
-    @exception_initialize = @ctx.module.functions.add("pup_exception_initialize",
-                              arg_types,
-			      ObjectPtrType)
-    @exception_to_s = @ctx.module.functions.add("pup_exception_to_s",
-                              arg_types,
-			      ObjectPtrType)
-    @exception_message = @ctx.module.functions.add("pup_exception_message",
-                              arg_types,
-			      ObjectPtrType)
+    @puts_method = declare_meth_impl_func("pup_puts")
+    @raise_method = declare_meth_impl_func("pup_object_raise")
+    @class_to_s_method = declare_meth_impl_func("pup_class_to_s")
+    @exception_initialize = declare_meth_impl_func("pup_exception_initialize")
+    @exception_to_s = declare_meth_impl_func("pup_exception_to_s")
+    @exception_message = declare_meth_impl_func("pup_exception_message")
   end
 
   private
+
+  def declare_meth_impl_func(name)
+    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
+    @ctx.module.functions.add(name, arg_types, ObjectPtrType)
+  end
 
   def def_global_const(sym, global_name)
     global = @ctx.module.globals[global_name]
