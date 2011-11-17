@@ -57,56 +57,61 @@ class RuntimeBuilder
   end
 
   def build_runtime_init
-    @ctx.module.functions.add("llvm.eh.exception",
-                              [],
-			      LLVM::Int8.type.pointer)
-    @ctx.module.functions.add("llvm.eh.selector",
-                              [LLVM::Int8.type.pointer, LLVM::Int8.type.pointer],
-			      LLVM::Int32, :varargs => true)
-    @ctx.module.functions.add("pup_eh_personality",
-                              [],
-                              LLVM.Void)
-    @ctx.module.functions.add("pup_handle_uncaught_exception",
-                              [LLVM::Int8.type.pointer],
-                              ObjectPtrType)
-    @ctx.module.functions.add("pup_rethrow_uncaught_exception",
-                              [LLVM::Int8.type.pointer],
-                              LLVM.Void)
-    @ctx.module.functions.add("pup_create_class",
-                              [ClassType.pointer, ClassType.pointer, ClassType.pointer, CStrType],
-			      ClassType.pointer)
-    @ctx.module.functions.add("pup_define_method",
-                              [ClassType.pointer, LLVM::Int, MethodPtrType],
-			      LLVM.Void)
+    # external function declarations,
+    [
+      ["llvm.eh.exception",
+	[],
+	LLVM::Int8.type.pointer],
+      ["llvm.eh.selector",
+	[LLVM::Int8.type.pointer, LLVM::Int8.type.pointer],
+	LLVM::Int32, {:varargs => true}],
+      ["pup_eh_personality",
+	[],
+	LLVM.Void],
+      ["pup_handle_uncaught_exception",
+	[LLVM::Int8.type.pointer],
+	ObjectPtrType],
+      ["pup_rethrow_uncaught_exception",
+	[LLVM::Int8.type.pointer],
+	LLVM.Void],
+      ["pup_create_class",
+	[ClassType.pointer, ClassType.pointer, ClassType.pointer, CStrType],
+	ClassType.pointer],
+      ["pup_define_method",
+	[ClassType.pointer, LLVM::Int, MethodPtrType],
+	LLVM.Void],
+      ["pup_invoke",
+	[ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
+	ObjectPtrType],
+      ["extract_exception_obj",
+	[LLVM::Int8.type.pointer],
+	ObjectPtrType],
+      ["pup_string_create",
+	[CStrType],
+	ObjectPtrType],
+      ["pup_const_get_required",
+	[ClassType.pointer, LLVM::Int],
+	ObjectPtrType],
+      ["pup_const_set",
+	[ClassType.pointer, LLVM::Int, ObjectPtrType],
+	LLVM.Void],
+      ["pup_iv_set",
+	[ObjectPtrType, LLVM::Int, ObjectPtrType],
+	LLVM.Void],
+      ["pup_iv_get",
+	[ObjectPtrType, LLVM::Int],
+	ObjectPtrType],
+      ["pup_class_context_from",
+	[ObjectPtrType],
+	ClassType.pointer],
+      ["pup_is_descendant_or_same",
+	[ObjectPtrType, ObjectPtrType],
+	LLVM::Int1]
+    ].each do |args|
+      @ctx.module.functions.add(*args)
+    end
     declare_meth_impl_func("pup_object_allocate")
     declare_meth_impl_func("pup_object_initialize")
-    @ctx.module.functions.add("pup_invoke",
-                              [ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
-			      ObjectPtrType)
-    @ctx.module.functions.add("extract_exception_obj",
-                              [LLVM::Int8.type.pointer],
-			      ObjectPtrType)
-    @ctx.module.functions.add("pup_string_create",
-                              [CStrType],
-			      ObjectPtrType)
-    @ctx.module.functions.add("pup_const_get_required",
-                              [ClassType.pointer, LLVM::Int],
-			      ObjectPtrType)
-    @ctx.module.functions.add("pup_const_set",
-                              [ClassType.pointer, LLVM::Int, ObjectPtrType],
-			      LLVM.Void)
-    @ctx.module.functions.add("pup_iv_set",
-                              [ObjectPtrType, LLVM::Int, ObjectPtrType],
-			      LLVM.Void)
-    @ctx.module.functions.add("pup_iv_get",
-                              [ObjectPtrType, LLVM::Int],
-			      ObjectPtrType)
-    @ctx.module.functions.add("pup_class_context_from",
-                              [ObjectPtrType],
-			      ClassType.pointer)
-    @ctx.module.functions.add("pup_is_descendant_or_same",
-                              [ObjectPtrType, ObjectPtrType],
-			      LLVM::Int1)
     @ctx.module.functions.add("pup_runtime_init", [], LLVM.Void) do |fn|
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do
