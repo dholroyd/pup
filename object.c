@@ -10,8 +10,6 @@
 #include "string.h"
 #include "abortf.h"
 
-extern struct PupClass ExceptionClassInstance;
-
 struct PupAttributeListEntry {
 	long name_sym;
 	struct PupObject *value;
@@ -159,7 +157,7 @@ char *pup_stringify(struct PupObject *obj)
 	if (pup_is_string(obj)) {
 		return strdup(pup_string_value_unsafe(obj));
 	}
-	if (pup_object_instanceof(obj, &ExceptionClassInstance)) {
+	if (pup_instanceof_exception(obj)) {
 		const char *msg = exception_text(obj);
 		if (msg) {
 			return strdup(msg);

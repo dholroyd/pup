@@ -38,6 +38,10 @@ static void dump_stack()
 extern void pup_exception_message_set(struct PupObject *target,
                                       struct PupObject *value);
 
+bool pup_instanceof_exception(struct PupObject *obj)
+{
+	return pup_object_instanceof(obj, &ExceptionClassInstance);
+}
 
 struct PupObject *pup_new_runtimeerror(const char *message)
 {
