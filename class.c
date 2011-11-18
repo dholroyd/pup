@@ -6,6 +6,7 @@
 #include "string.h"
 #include "raise.h"
 #include "exception.h"
+#include "object.h"
 #include "abortf.h"
 
 struct MethodListEntry {

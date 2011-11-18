@@ -7,7 +7,7 @@
 #include "runtime.h"
 #include "raise.h"
 #include "string.h"
-#include "class.h"
+#include "object.h"
 
 extern struct PupClass ExceptionClassInstance;
 extern struct PupClass RuntimeErrorClassInstance;
@@ -72,14 +72,14 @@ const char *exception_text(struct PupObject *ex)
 	if (msg) {
 		return pup_string_value(msg);
 	}
-	return pup_type_name_of((struct PupObject *)ex);
+	return pup_object_type_name(ex);
 }
 
 void pup_handle_uncaught_exception(const struct _Unwind_Exception *e)
 {
 	struct PupObject *ex = extract_exception_obj(e);
 	fprintf(stderr, "Uncaught %s: \"%s\"\n",
-	       pup_type_name_of((struct PupObject *)ex), exception_text(ex));
+	       pup_object_type_name((struct PupObject *)ex), exception_text(ex));
 	exit(1);
 }
 
@@ -87,7 +87,7 @@ METH_IMPL(pup_exception_to_s)
 {
 	char buf[1024];
 	snprintf(buf, sizeof(buf), "#<%s: %s>",
-	         pup_type_name_of(target),
+	         pup_object_type_name(target),
 	         exception_text(((struct PupObject *)target)));
 	return pup_string_new_cstr(buf);
 }
@@ -112,7 +112,7 @@ METH_IMPL(pup_object_raise)
 {
 	pup_arity_check(1, argc);
 	struct PupObject *arg = argv[0];
-	if (pup_is_descendant_or_same(&ExceptionClassInstance, arg->type)) {
+	if (pup_object_kindof(arg, &ExceptionClassInstance)) {
 		pup_raise(arg);
 		abort();
 	}
