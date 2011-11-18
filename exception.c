@@ -6,6 +6,7 @@
 #include "core_types.h"
 #include "runtime.h"
 #include "raise.h"
+#include "string.h"
 
 extern struct PupClass ExceptionClassInstance;
 extern struct PupClass RuntimeErrorClassInstance;
@@ -67,9 +68,9 @@ extern struct PupObject *pup_exception_message_get(struct PupObject *target);
 
 const char *exception_text(struct PupObject *ex)
 {
-	struct PupString *msg = (struct PupString *)pup_exception_message_get(ex);
+	struct PupObject *msg = pup_exception_message_get(ex);
 	if (msg) {
-		return msg->value;
+		return pup_string_value(msg);
 	}
 	return pup_type_name_of((struct PupObject *)ex);
 }
@@ -112,11 +113,11 @@ METH_IMPL(pup_object_raise)
 	pup_arity_check(1, argc);
 	struct PupObject *arg = argv[0];
 	if (pup_is_descendant_or_same(&ExceptionClassInstance, arg->type)) {
-		pup_raise((struct PupObject *)arg);
+		pup_raise(arg);
 		abort();
 	}
 	if (pup_is_class(arg, &StringClassInstance)) {
-		pup_raise_runtimeerror(((struct PupString *)arg)->value);
+		pup_raise_runtimeerror(pup_string_value_unsafe(arg));
 		abort();
 	}
 	// TODO exception classes

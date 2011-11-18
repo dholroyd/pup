@@ -29,8 +29,3 @@ struct PupClass {
 	struct PupMethodListEntry *method_list_head;
 	struct PupClass *scope;  /* for Constant lookup */
 };
-
-struct PupString {
-	struct PupObject obj_header;
-	char *value;
-};

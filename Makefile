@@ -22,7 +22,7 @@ string.o:	string.c core_types.h runtime.h
 raise.o:	raise.c core_types.h abortf.h
 	${clang} -O0 -Wall -Werror -g -c -fexceptions raise.c -o raise.o
 
-class.o:	class.c runtime.c
+class.o:	class.c runtime.h string.h
 	${clang} -O0 -Wall -Werror -g -c -fexceptions class.c -o class.o
 
 parser.rb:	parser.treetop

@@ -11,8 +11,6 @@ int pup_is_descendant_or_same(const struct PupClass *ancestor,
 
 const char *pup_type_name_of(const struct PupObject *obj);
 
-struct PupObject *pup_string_new_cstr(const char *str);
-
 int pup_is_class(const struct PupObject *obj, const struct PupClass *class);
 
 void pup_arity_check(int expected, int actual);

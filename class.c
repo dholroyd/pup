@@ -1,5 +1,6 @@
 #include "core_types.h"
 #include "runtime.h"
+#include "string.h"
 
 
 METH_IMPL(pup_class_to_s)

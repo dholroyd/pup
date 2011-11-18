@@ -86,7 +86,7 @@ class RuntimeBuilder
       ["extract_exception_obj",
 	[LLVM::Int8.type.pointer],
 	ObjectPtrType],
-      ["pup_string_create",
+      ["pup_string_new_cstr",
 	[CStrType],
 	ObjectPtrType],
       ["pup_const_get_required",

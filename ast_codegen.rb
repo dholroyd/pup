@@ -160,7 +160,7 @@ class StringLiteral
     ctx.eval_build do
       data = global_string(str)
       src_ptr = gep(data, [LLVM.Int(0),LLVM.Int(0)], "src_ptr")
-      ctx.build_call.pup_string_create(src_ptr, "str_#{me.sanitise(str)}")
+      ctx.build_call.pup_string_new_cstr(src_ptr, "str_#{me.sanitise(str)}")
     end
   end
 

@@ -8,6 +8,7 @@
 #include "abortf.h"
 #include "raise.h"
 #include "exception.h"
+#include "string.h"
 
 extern struct PupClass StringClassInstance;
 extern struct PupClass ClassClassInstance;
@@ -87,17 +88,6 @@ const char *pup_type_name_of(const struct PupObject *obj)
 		return "<NULL type name!>";
 	}
 	return obj->type->name;
-}
-
-struct PupObject *pup_string_new_cstr(const char *str)
-{
-	struct PupString *string = malloc(sizeof(struct PupString));
-	if (!malloc) {
-		return NULL;
-	}
-	obj_init(&(string->obj_header), &StringClassInstance);
-	string->value = strdup(str);
-	return (struct PupObject *)string;
 }
 
 void pup_default_obj_cstr(const struct PupObject *obj,
@@ -184,7 +174,7 @@ int pup_is_descendant_or_same(const struct PupClass *ancestor,
 char *pup_stringify(struct PupObject *obj)
 {
 	if (pup_is_class(obj, &StringClassInstance)) {
-		return strdup(((struct PupString *)obj)->value);
+		return strdup(pup_string_value_unsafe(obj));
 	}
 	if (pup_is_class(obj, &ExceptionClassInstance)) {
 		const char *msg = exception_text(obj);
