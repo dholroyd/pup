@@ -102,7 +102,7 @@ class VarOrInvokeExpr
   def codegen_var_access(ctx)
     if const?
       self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
-      ctx.build_call.pup_const_get_required(self_class, LLVM.Int(@name.name.to_sym.to_i), "#{@name.name}_access")
+      ctx.build_call.pup_const_get_required(self_class, ctx.mk_sym(@name.name), "#{@name.name}_access")
     else
       local = ctx.current_method.get_local(@name.name)
       ctx.build.load(local, "#{@name.name}_access")
@@ -125,7 +125,7 @@ class VarOrInvokeExpr
     else
       argv = ::Pup::Core::Types::ObjectPtrType.pointer.null
     end
-    sym = LLVM.Int(name.name.to_sym.to_i)
+    sym = ctx.mk_sym(name.name)
     if ctx.eh_active?
       # block following invocation; continue here if no exception raised
       bkcontinue = ctx.current_method.function.basic_blocks.append("invoke_#{@name.name}_continue")
@@ -201,7 +201,7 @@ class ClassDef
                       self_class,
 		      class_name_ref,
                       "class_#{class_name}")
-      ctx.build_call.pup_const_set(self_class, LLVM.Int(class_name.to_sym.to_i), bit_cast(classdef, ObjectPtrType))
+      ctx.build_call.pup_const_set(self_class, ctx.mk_sym(class_name), bit_cast(classdef, ObjectPtrType))
     end
     # self becomes a ref to the class being defined, within the class body,
     ctx.using_self(classdef) do
@@ -240,7 +240,7 @@ class MethodDef
       end
     end
     #hopefully_a_class = class_context(ctx)
-    ctx.runtime_builder.call_define_method(ctx.self_ref, LLVM.Int(name.name.to_sym.to_i), fn)
+    ctx.runtime_builder.call_define_method(ctx.self_ref, ctx.mk_sym(name.name), fn)
   end
 
   def class_context(ctx)

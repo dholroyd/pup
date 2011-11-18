@@ -29,16 +29,16 @@ class RuntimeBuilder
       end
     end
     class_class_instance = @ctx.global.ClassClassInstance
-    sym = LLVM.Int(:new.to_i)
+    sym = @ctx.mk_sym(:new)
     call_define_method(class_class_instance, sym, fn)
 
-    sym = LLVM.Int(:allocate.to_i)
+    sym = @ctx.mk_sym(:allocate)
     pup_object_allocate = @ctx.module.functions["pup_object_allocate"]
     call_define_method(class_class_instance, sym, pup_object_allocate)
 
     object_class_instance = @ctx.global.ObjectClassInstance
 
-    sym = LLVM.Int(:initialize.to_i)
+    sym = @ctx.mk_sym(:initialize)
     pup_object_initialize = @ctx.module.functions["pup_object_initialize"]
     call_define_method(object_class_instance, sym, pup_object_initialize)
 
@@ -135,7 +135,7 @@ class RuntimeBuilder
       value.name = "value"
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do
-	@ctx.build_call.pup_iv_set(target, LLVM.Int(:@message.to_i), value)
+	@ctx.build_call.pup_iv_set(target, @ctx.mk_sym(:@message), value)
 	@ctx.build.ret_void
       end
     end
@@ -143,7 +143,7 @@ class RuntimeBuilder
       target.name = "target"
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do
-	ret = @ctx.build_call.pup_iv_get(target, LLVM.Int(:@message.to_i))
+	ret = @ctx.build_call.pup_iv_get(target, @ctx.mk_sym(:@message))
 	@ctx.build.ret ret
       end
     end
@@ -255,7 +255,7 @@ class RuntimeBuilder
   def def_global_const(sym, global_name)
     global = @ctx.module.globals[global_name]
     raise "No global #{global_name}" unless global
-    @ctx.build_call.pup_const_set(@ctx.global.Main, LLVM.Int(sym.to_sym.to_i), global.bit_cast(ObjectPtrType))
+    @ctx.build_call.pup_const_set(@ctx.global.Main, @ctx.mk_sym(sym), global.bit_cast(ObjectPtrType))
   end
 
 end

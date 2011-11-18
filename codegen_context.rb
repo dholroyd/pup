@@ -244,7 +244,7 @@ class CodegenContext
   #  argv - an LLVM array of arguments
   #  argc - ruby fixnum - the number of arguments in the argv array
   def build_simple_method_invoke_argv(receiver, method_name, argv, argc)
-    sym = LLVM.Int(method_name.to_sym.to_i)
+    sym = mk_sym(method_name)
     build_call.pup_invoke(receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
   end
 
@@ -278,11 +278,16 @@ class CodegenContext
 
   def build_meth_list_entry(name, fn_ptr, next_entry = nil)
     entry = const_struct(
-      LLVM.Int(name.to_sym.to_i),
+      mk_sym(name),
       fn_ptr,
       next_entry || MethodListEntryPtrType.null_pointer
     )
     global_constant(MethodListEntryType, entry, "meth_entry_#{name}")
+  end
+
+  # Makes an LLVM Int from name.to_sym.to_i
+  def mk_sym(name)
+    LLVM.Int(name.to_sym.to_i)
   end
 
   private
