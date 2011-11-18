@@ -7,6 +7,7 @@
 #include "runtime.h"
 #include "raise.h"
 #include "string.h"
+#include "class.h"
 
 extern struct PupClass ExceptionClassInstance;
 extern struct PupClass RuntimeErrorClassInstance;
