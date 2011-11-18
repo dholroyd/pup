@@ -10,7 +10,6 @@
 #include "exception.h"
 #include "string.h"
 
-extern struct PupClass StringClassInstance;
 extern struct PupClass ClassClassInstance;
 extern struct PupClass ExceptionClassInstance;
 
@@ -173,7 +172,7 @@ int pup_is_descendant_or_same(const struct PupClass *ancestor,
 
 char *pup_stringify(struct PupObject *obj)
 {
-	if (pup_is_class(obj, &StringClassInstance)) {
+	if (pup_is_string(obj)) {
 		return strdup(pup_string_value_unsafe(obj));
 	}
 	if (pup_is_class(obj, &ExceptionClassInstance)) {

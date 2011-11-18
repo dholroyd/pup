@@ -1,6 +1,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "core_types.h"
 #include "runtime.h"
 #include "raise.h"
@@ -36,4 +37,9 @@ const char *pup_string_value(struct PupObject *str)
 		                                pup_type_name_of(str)));
 	}
 	return pup_string_value_unsafe(str);
+}
+
+bool pup_is_string(struct PupObject *obj)
+{
+	return pup_is_class(obj, &StringClassInstance);
 }

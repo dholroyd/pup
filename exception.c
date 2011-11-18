@@ -10,7 +10,6 @@
 
 extern struct PupClass ExceptionClassInstance;
 extern struct PupClass RuntimeErrorClassInstance;
-extern struct PupClass StringClassInstance;
 
 /*
 static void dump_stack()
@@ -116,7 +115,7 @@ METH_IMPL(pup_object_raise)
 		pup_raise(arg);
 		abort();
 	}
-	if (pup_is_class(arg, &StringClassInstance)) {
+	if (pup_is_string(arg)) {
 		pup_raise_runtimeerror(pup_string_value_unsafe(arg));
 		abort();
 	}
