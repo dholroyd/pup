@@ -1,36 +1,36 @@
 
-struct Object;
+struct PupObject;
 
-typedef struct Object *(Method)(struct Object *, long, struct Object **);
+typedef struct PupObject *(PupMethod)(struct PupObject *, long, struct PupObject **);
 
-struct MethodListEntry {
+struct PupMethodListEntry {
 	long name_sym;
-	Method *method;
-	struct MethodListEntry *next;
+	PupMethod *method;
+	struct PupMethodListEntry *next;
 };
 
-struct AttributeListEntry {
+struct PupAttributeListEntry {
 	long name_sym;
-	struct Object *value;
-	struct AttributeListEntry *next;
+	struct PupObject *value;
+	struct PupAttributeListEntry *next;
 };
 
-struct Class;
+struct PupClass;
 
-struct Object {
-	struct Class *type;
-	struct AttributeListEntry *attr_list_head;
+struct PupObject {
+	struct PupClass *type;
+	struct PupAttributeListEntry *attr_list_head;
 };
 
-struct Class {
-	struct Object obj_header;
-	struct Class *superclass;
+struct PupClass {
+	struct PupObject obj_header;
+	struct PupClass *superclass;
 	char *name;
-	struct MethodListEntry *method_list_head;
-	struct Class *scope;  /* for Constant lookup */
+	struct PupMethodListEntry *method_list_head;
+	struct PupClass *scope;  /* for Constant lookup */
 };
 
-struct String {
-	struct Object obj_header;
+struct PupString {
+	struct PupObject obj_header;
 	char *value;
 };

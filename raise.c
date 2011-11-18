@@ -20,11 +20,11 @@ static uint64_t pup_unwindclass
 	| ((uint64_t)'\000');
 
 struct PupUnwindException {
-	struct Object *pup_exception;
+	struct PupObject *pup_exception;
 	struct _Unwind_Exception unwindException;
 };
 
-extern struct Class ExceptionClassInstance;
+extern struct PupClass ExceptionClassInstance;
 
 static void pup_uwind_exception_cleanup(
 	const _Unwind_Reason_Code reason,
@@ -36,7 +36,7 @@ static void pup_uwind_exception_cleanup(
 }
 
 static struct _Unwind_Exception *create_unwind_exception(
-	struct Object *pup_exception_obj
+	struct PupObject *pup_exception_obj
 ) {
 	size_t size = sizeof(struct PupUnwindException);
 
@@ -48,7 +48,7 @@ static struct _Unwind_Exception *create_unwind_exception(
 	return &(ret->unwindException);
 }
 
-struct Object *extract_exception_obj(
+struct PupObject *extract_exception_obj(
 	const struct _Unwind_Exception *exceptionObject
 ) {
 	// TODO: move somewere sensible?
@@ -60,7 +60,7 @@ struct Object *extract_exception_obj(
 	return ue->pup_exception;
 }
 
-void pup_raise(struct Object *pup_exception)
+void pup_raise(struct PupObject *pup_exception)
 {
 	struct _Unwind_Exception *e = create_unwind_exception(pup_exception);
 	_Unwind_Reason_Code reason = _Unwind_RaiseException(e);
@@ -234,7 +234,7 @@ static bool is_foreign_unwindclass(const uint64_t unwindclass)
 }
 
 static bool handle_action_value(int64_t *resultAction,
-                              struct Class **exception_class_table, 
+                              struct PupClass **exception_class_table, 
                               const uintptr_t action_table_entry, 
                               const uint64_t exceptionClass, 
                               const struct _Unwind_Exception *exceptionObject)
@@ -317,7 +317,7 @@ static _Unwind_Reason_Code handle_lsda(const uint8_t *lsda,
 	uintptr_t pc = _Unwind_GetIP(context)-1;
 	uintptr_t funcStart = _Unwind_GetRegionStart(context);
 	uintptr_t pcOffset = pc - funcStart;
-	struct Class** exception_class_table = NULL;
+	struct PupClass** exception_class_table = NULL;
 
 	uint8_t lpStartEncoding = *lsda++;
 	if (lpStartEncoding != DW_EH_PE_omit) {
@@ -330,7 +330,7 @@ static _Unwind_Reason_Code handle_lsda(const uint8_t *lsda,
 		// FIXME: the resulting table entries seem to be incorrect,
 		//        which must mean I've done something wrong!  (only 32
 		//        bits of the address; on my 64bit machine?)
-		exception_class_table = (struct Class**) (lsda + classInfoOffset);
+		exception_class_table = (struct PupClass**) (lsda + classInfoOffset);
 	}
 	/* Walk call-site table looking for range that includes current PC. */
 	uint8_t         callSiteEncoding = *lsda++;

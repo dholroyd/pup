@@ -4,11 +4,11 @@
 #include "core_types.h"
 #include "runtime.h"
 
-extern struct Class StringClassInstance;
+extern struct PupClass StringClassInstance;
 
-struct String *pup_string_create(const char *data)
+struct PupString *pup_string_create(const char *data)
 {
-	struct String *result = malloc(sizeof(struct String));
+	struct PupString *result = malloc(sizeof(struct PupString));
 	obj_init(&(result->obj_header), &StringClassInstance);
 	result->value = strdup(data);
 	return result;

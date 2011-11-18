@@ -1,9 +1,9 @@
-void pup_raise(struct Object *pup_exception);
+void pup_raise(struct PupObject *pup_exception);
 
 struct _Unwind_Exception *create_unwind_exception(
-	struct Object *pup_exception_obj
+	struct PupObject *pup_exception_obj
 );
 
-struct Object *extract_exception_obj(
+struct PupObject *extract_exception_obj(
 	const struct _Unwind_Exception *exceptionObject
 );

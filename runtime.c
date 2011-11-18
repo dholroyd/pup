@@ -9,22 +9,22 @@
 #include "raise.h"
 #include "exception.h"
 
-extern struct Class StringClassInstance;
-extern struct Class ClassClassInstance;
-extern struct Class ExceptionClassInstance;
+extern struct PupClass StringClassInstance;
+extern struct PupClass ClassClassInstance;
+extern struct PupClass ExceptionClassInstance;
 
-void obj_init(struct Object *obj, struct Class *type)
+void obj_init(struct PupObject *obj, struct PupClass *type)
 {
 	obj->type = type;
 	obj->attr_list_head = NULL;
 }
 
-struct Class *pup_create_class(struct Class *class_class,
-                               struct Class *superclass,
-                               struct Class *scope,
+struct PupClass *pup_create_class(struct PupClass *class_class,
+                               struct PupClass *superclass,
+                               struct PupClass *scope,
 			       const char *name)
 {
-	struct Class *class = (struct Class *)malloc(sizeof(struct Class));
+	struct PupClass *class = (struct PupClass *)malloc(sizeof(struct PupClass));
 	obj_init(&class->obj_header, class_class);
 	class->name = strdup(name);
 	class->superclass = superclass;
@@ -34,12 +34,12 @@ struct Class *pup_create_class(struct Class *class_class,
 }
 
 /*
- * Adds the given Method to the method table of the given Class
+ * Adds the given PupMethod to the method table of the given PupClass
  */
-void pup_define_method(struct Class *class, const long name_sym, Method *method)
+void pup_define_method(struct PupClass *class, const long name_sym, PupMethod *method)
 {
-	struct MethodListEntry **pos;
-	struct MethodListEntry *new;
+	struct PupMethodListEntry **pos;
+	struct PupMethodListEntry *new;
 
 	ABORT_ON(!class,
 		"Class reference given to pup_define_method() must not be null");
@@ -47,7 +47,7 @@ void pup_define_method(struct Class *class, const long name_sym, Method *method)
 	while (*pos) {
 		pos = &(*pos)->next;
 	}
-	new = (struct MethodListEntry *)malloc(sizeof(struct MethodListEntry));
+	new = (struct PupMethodListEntry *)malloc(sizeof(struct PupMethodListEntry));
 	new->name_sym = name_sym;
 	new->method = method;
 	new->next = NULL;
@@ -56,14 +56,14 @@ void pup_define_method(struct Class *class, const long name_sym, Method *method)
 
 METH_IMPL(pup_object_allocate)
 {
-	struct Object *obj = (struct Object *)malloc(sizeof(struct Object));
-	obj_init(obj, (struct Class *)target);
+	struct PupObject *obj = (struct PupObject *)malloc(sizeof(struct PupObject));
+	obj_init(obj, (struct PupClass *)target);
 	return obj;
 }
 
-struct Object *pup_create_object(struct Class *type)
+struct PupObject *pup_create_object(struct PupClass *type)
 {
-	return pup_object_allocate((struct Object *)type, 0, NULL);
+	return pup_object_allocate((struct PupObject *)type, 0, NULL);
 }
 
 /*
@@ -75,7 +75,7 @@ METH_IMPL(pup_object_initialize)
 	return NULL;
 }
 
-const char *pup_type_name_of(const struct Object *obj)
+const char *pup_type_name_of(const struct PupObject *obj)
 {
 	if (!obj) {
 		return "<NULL Object ref>";
@@ -89,18 +89,18 @@ const char *pup_type_name_of(const struct Object *obj)
 	return obj->type->name;
 }
 
-struct Object *pup_string_new_cstr(const char *str)
+struct PupObject *pup_string_new_cstr(const char *str)
 {
-	struct String *string = malloc(sizeof(struct String));
+	struct PupString *string = malloc(sizeof(struct PupString));
 	if (!malloc) {
 		return NULL;
 	}
 	obj_init(&(string->obj_header), &StringClassInstance);
 	string->value = strdup(str);
-	return (struct Object *)string;
+	return (struct PupObject *)string;
 }
 
-void pup_default_obj_cstr(const struct Object *obj,
+void pup_default_obj_cstr(const struct PupObject *obj,
                           char *buf,
                           const size_t buf_size)
 {
@@ -124,7 +124,7 @@ METH_IMPL(pup_object_to_s)
 	return pup_string_new_cstr(buf);
 }
 
-static Method *find_method_in_list(struct MethodListEntry *meth_list,
+static PupMethod *find_method_in_list(struct PupMethodListEntry *meth_list,
                                    const long name_sym)
 {
 	while (meth_list) {
@@ -136,10 +136,10 @@ static Method *find_method_in_list(struct MethodListEntry *meth_list,
 	return NULL;
 }
 
-static Method *find_method_in_classes(struct Class *class, const long name_sym)
+static PupMethod *find_method_in_classes(struct PupClass *class, const long name_sym)
 {
 	while (class) {
-		Method *method = find_method_in_list(class->method_list_head,
+		PupMethod *method = find_method_in_list(class->method_list_head,
 		                                     name_sym);
 		if (method) {
 			return method;
@@ -149,12 +149,12 @@ static Method *find_method_in_classes(struct Class *class, const long name_sym)
 	return NULL;
 }
 
-struct Object *pup_invoke(struct Object *target, const long name_sym,
-                          const long argc, struct Object **argv)
+struct PupObject *pup_invoke(struct PupObject *target, const long name_sym,
+                             const long argc, struct PupObject **argv)
 {
 	ABORTF_ON(!target, "no target for invocation of sym:%ld", name_sym);
-	struct Class *class = target->type;
-	Method *method = find_method_in_classes(class, name_sym);
+	struct PupClass *class = target->type;
+	PupMethod *method = find_method_in_classes(class, name_sym);
 	if (!method) {
 		char buf[256];
 		snprintf(buf, sizeof(buf), "undefined method `sym:%ld' for %s", name_sym, pup_type_name_of(target));
@@ -163,17 +163,17 @@ struct Object *pup_invoke(struct Object *target, const long name_sym,
 	return (*method)(target, argc, argv);
 }
 
-int pup_is_class(const struct Object *obj, const struct Class *class)
+int pup_is_class(const struct PupObject *obj, const struct PupClass *class)
 {
 	return obj->type == class;
 }
 
-int pup_is_descendant_or_same(const struct Class *ancestor,
-                              const struct Class *descendant)
+int pup_is_descendant_or_same(const struct PupClass *ancestor,
+                              const struct PupClass *descendant)
 {
 	ABORT_ON(!ancestor, "ancestor must not be NULL");
 	ABORT_ON(!descendant, "descendant must not be NULL");
-	for (const struct Class *next = descendant; next; next=next->superclass) {
+	for (const struct PupClass *next = descendant; next; next=next->superclass) {
 		if (next == ancestor) {
 			return true;
 		}
@@ -181,10 +181,10 @@ int pup_is_descendant_or_same(const struct Class *ancestor,
 	return false;
 }
 
-char *pup_stringify(struct Object *obj)
+char *pup_stringify(struct PupObject *obj)
 {
 	if (pup_is_class(obj, &StringClassInstance)) {
-		return strdup(((struct String *)obj)->value);
+		return strdup(((struct PupString *)obj)->value);
 	}
 	if (pup_is_class(obj, &ExceptionClassInstance)) {
 		const char *msg = exception_text(obj);
@@ -209,10 +209,10 @@ METH_IMPL(pup_puts)
 	return NULL;
 }
 
-static struct AttributeListEntry *find_attr(const struct Object *obj,
+static struct PupAttributeListEntry *find_attr(const struct PupObject *obj,
                                      const int sym)
 {
-	struct AttributeListEntry *attr = obj->attr_list_head;
+	struct PupAttributeListEntry *attr = obj->attr_list_head;
 	while (attr) {
 		if (attr->name_sym == sym) {
 			return attr;
@@ -222,21 +222,21 @@ static struct AttributeListEntry *find_attr(const struct Object *obj,
 	return NULL;
 }
 
-static struct AttributeListEntry *create_attr(const int sym,
-                                              struct Object *val,
-					      struct AttributeListEntry *next)
+static struct PupAttributeListEntry *create_attr(const int sym,
+                                              struct PupObject *val,
+					      struct PupAttributeListEntry *next)
 {
-	struct AttributeListEntry *attr
-		= malloc(sizeof(struct AttributeListEntry));
+	struct PupAttributeListEntry *attr
+		= malloc(sizeof(struct PupAttributeListEntry));
 	attr->name_sym = sym;
 	attr->value = val;
 	attr->next = next;
 	return attr;
 }
 
-void pup_iv_set(struct Object *obj, const int sym, struct Object *val)
+void pup_iv_set(struct PupObject *obj, const int sym, struct PupObject *val)
 {
-	struct AttributeListEntry *attr = find_attr(obj, sym);
+	struct PupAttributeListEntry *attr = find_attr(obj, sym);
 	// TODO: what to do about these race conditions?
 	if (attr) {
 		attr->value = val;
@@ -245,24 +245,24 @@ void pup_iv_set(struct Object *obj, const int sym, struct Object *val)
 	}
 }
 
-struct Object *pup_iv_get(struct Object *obj, const int sym)
+struct PupObject *pup_iv_get(struct PupObject *obj, const int sym)
 {
-	struct AttributeListEntry *attr = find_attr(obj, sym);
+	struct PupAttributeListEntry *attr = find_attr(obj, sym);
 	if (attr) {
 		return attr->value;
 	}
 	return NULL;  /* TODO nil */
 }
 
-void pup_const_set(struct Class* clazz, const int sym, struct Object *val)
+void pup_const_set(struct PupClass* clazz, const int sym, struct PupObject *val)
 {
 	pup_iv_set(&clazz->obj_header, sym, val);
 }
 
-struct Object *pup_const_get(struct Class *clazz, const int sym)
+struct PupObject *pup_const_get(struct PupClass *clazz, const int sym)
 {
-	struct Object *result;
-	struct Class *lookup = clazz;
+	struct PupObject *result;
+	struct PupClass *lookup = clazz;
 	/* TODO: while nil, rather than while NULL */
 	while ((result = pup_iv_get(&lookup->obj_header, sym)) == NULL) {
 		lookup = lookup->scope;
@@ -271,9 +271,9 @@ struct Object *pup_const_get(struct Class *clazz, const int sym)
 	return result;
 }
 
-struct Object *pup_const_get_required(struct Class *clazz, const int sym)
+struct PupObject *pup_const_get_required(struct PupClass *clazz, const int sym)
 {
-	struct Object *res = pup_const_get(clazz, sym);
+	struct PupObject *res = pup_const_get(clazz, sym);
 	if (!res) {
 		// TODO: NameError
 		pup_raise(pup_new_runtimeerrorf("uninitialized constant sym:%ld",
@@ -287,10 +287,10 @@ struct Object *pup_const_get_required(struct Class *clazz, const int sym)
  * Used when we want to make use of 'self' without caring if we are in class
  * or instance context.
  */
-struct Class *pup_class_context_from(struct Object *obj)
+struct PupClass *pup_class_context_from(struct PupObject *obj)
 {
 	if (obj->type == &ClassClassInstance) {
-		return (struct Class *)obj;
+		return (struct PupClass *)obj;
 	}
 	return obj->type;
 }

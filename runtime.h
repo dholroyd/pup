@@ -1,18 +1,18 @@
-#define METH_IMPL(name) struct Object *name(struct Object *target, \
-                                            long argc,             \
-                                            struct Object **argv)
+#define METH_IMPL(name) struct PupObject *name(struct PupObject *target, \
+                                               long argc,             \
+                                               struct PupObject **argv)
 
-void obj_init(struct Object *obj, struct Class *type);
+void obj_init(struct PupObject *obj, struct PupClass *type);
 
-struct Object *pup_create_object(struct Class *type);
+struct PupObject *pup_create_object(struct PupClass *type);
 
-int pup_is_descendant_or_same(const struct Class *ancestor,
-                              const struct Class *descendant);
+int pup_is_descendant_or_same(const struct PupClass *ancestor,
+                              const struct PupClass *descendant);
 
-const char *pup_type_name_of(const struct Object *obj);
+const char *pup_type_name_of(const struct PupObject *obj);
 
-struct Object *pup_string_new_cstr(const char *str);
+struct PupObject *pup_string_new_cstr(const char *str);
 
-int pup_is_class(const struct Object *obj, const struct Class *class);
+int pup_is_class(const struct PupObject *obj, const struct PupClass *class);
 
 void pup_arity_check(int expected, int actual);
