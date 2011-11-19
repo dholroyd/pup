@@ -130,13 +130,13 @@ class VarOrInvokeExpr
       # block following invocation; continue here if no exception raised
       bkcontinue = ctx.current_method.function.basic_blocks.append("invoke_#{@name.name}_continue")
       res = ctx.build.invoke(ctx.module.functions["pup_invoke"],
-                       [r, sym, LLVM::Int(arg_count), argv],
+                       [ctx.current_method.env, r, sym, LLVM::Int(arg_count), argv],
                        bkcontinue, ctx.landingpad,
 		       "#{@name.name}_ret")
       ctx.build.position_at_end(bkcontinue)
       res
     else
-      ctx.build_call.pup_invoke(
+      ctx.build_call.pup_invoke(ctx.current_method.env,
                      r, sym, LLVM::Int(arg_count), argv,
 		     "#{@name.name}_ret")
     end

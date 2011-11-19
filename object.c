@@ -30,9 +30,9 @@ METH_IMPL(pup_object_allocate)
 	return obj;
 }
 
-struct PupObject *pup_create_object(struct PupClass *type)
+struct PupObject *pup_create_object(ENV, struct PupClass *type)
 {
-	return pup_object_allocate((struct PupObject *)type, 0, NULL);
+	return pup_object_allocate(env, (struct PupObject *)type, 0, NULL);
 }
 
 /*
@@ -52,7 +52,7 @@ const char *pup_object_type_name(const struct PupObject *obj)
 	return pup_type_name(obj->type);
 }
 
-struct PupObject *pup_invoke(struct PupObject *target, const long name_sym,
+struct PupObject *pup_invoke(ENV, struct PupObject *target, const long name_sym,
                              const long argc, struct PupObject **argv)
 {
 	ABORTF_ON(!target, "no target for invocation of sym:%ld", name_sym);
@@ -63,7 +63,7 @@ struct PupObject *pup_invoke(struct PupObject *target, const long name_sym,
 		snprintf(buf, sizeof(buf), "undefined method `sym:%ld' for %s", name_sym, pup_object_type_name(target));
 		pup_raise_runtimeerror(buf);
 	}
-	return (*method)(target, argc, argv);
+	return (*method)(env, target, argc, argv);
 }
 
 bool pup_object_instanceof(const struct PupObject *obj,

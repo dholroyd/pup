@@ -13,7 +13,7 @@ void obj_init(struct PupObject *obj, struct PupClass *type);
 
 METH_IMPL(pup_object_allocate);
 
-struct PupObject *pup_create_object(struct PupClass *type);
+struct PupObject *pup_create_object(ENV, struct PupClass *type);
 
 const char *pup_object_type_name(const struct PupObject *obj);
 

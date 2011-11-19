@@ -19,8 +19,8 @@ class RuntimeBuilder
       @ctx.append_block do
 	@ctx.with_builder_at_end do
 	  theclass = pup_class_new.param_target
-	  obj = @ctx.build_simple_method_invoke(theclass, "allocate")
-	  @ctx.build_simple_method_invoke_argv(obj,
+	  obj = @ctx.build_simple_method_invoke(pup_class_new.env, theclass, "allocate")
+	  @ctx.build_simple_method_invoke_argv(pup_class_new.env, obj,
 	                                       "initialize",
 					       pup_class_new.param_argv,
 					       pup_class_new.param_argc)
@@ -81,7 +81,7 @@ class RuntimeBuilder
 	[ClassType.pointer, LLVM::Int, MethodPtrType],
 	LLVM.Void],
       ["pup_invoke",
-	[ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
+	[EnvPtrType, ObjectPtrType, SymbolType, LLVM::Int, ArgsType],
 	ObjectPtrType],
       ["extract_exception_obj",
 	[LLVM::Int8.type.pointer],
@@ -112,21 +112,23 @@ class RuntimeBuilder
     end
     declare_meth_impl_func("pup_object_allocate")
     declare_meth_impl_func("pup_object_initialize")
-    @ctx.module.functions.add("pup_runtime_init", [], LLVM.Void) do |fn|
+    @ctx.module.functions.add("pup_runtime_init", [EnvPtrType], LLVM.Void) do |fn, env|
+      env.name = "env"
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do
 	attach_classclass_methods
 	@ctx.build.ret_void
       end
     end
-    @ctx.module.functions.add("pup_create_instance", [ClassType.pointer, LLVM::Int, ArgsType], ObjectPtrType) do |fn, clazz, argc, argv|
+    @ctx.module.functions.add("pup_create_instance", [EnvPtrType, ClassType.pointer, LLVM::Int, ArgsType], ObjectPtrType) do |fn, env, clazz, argc, argv|
+      env.name = "env"
       clazz.name = "clazz"
       argc.name = "argc"
       argv.name = "argv"
       b = fn.basic_blocks.append
       @ctx.with_builder_at_end(b) do
 	o = @ctx.build.bit_cast(clazz, ::Pup::Core::Types::ObjectPtrType, "clazz_asobj")
-	res = @ctx.build_simple_method_invoke_argv(o, "new", argv, argc)
+	res = @ctx.build_simple_method_invoke_argv(env, o, "new", argv, argc)
 	@ctx.build.ret res
       end
     end
@@ -154,6 +156,7 @@ class RuntimeBuilder
     object_name_ptr = @ctx.global_string_constant("Object")
 
     @ctx.module.types.add("Object", ObjectType)
+    @ctx.module.types.add("RuntimeEnv", EnvType)
     @ctx.module.types.add("Class", ClassType)
     @ctx.module.types.add("String", StringObjectType)
     @ctx.module.types.add("Method", MethodType)
@@ -248,7 +251,7 @@ class RuntimeBuilder
   private
 
   def declare_meth_impl_func(name)
-    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
+    arg_types = [EnvPtrType, ObjectPtrType, LLVM::Int, ArgsType]
     @ctx.module.functions.add(name, arg_types, ObjectPtrType)
   end
 

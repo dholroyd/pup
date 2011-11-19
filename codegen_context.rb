@@ -34,6 +34,8 @@ class CodegenContext
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
     @runtime_builder.build_puts_meth
     @runtime_builder.init_types
+    env = EnvPtrType.null
+    @current_method = Struct.new("FakeMethod", :env).new(env)
     @runtime_builder.build_runtime_init
   end
 
@@ -132,14 +134,15 @@ class CodegenContext
   end
 
   def def_method(name)
-    arg_types = [ObjectPtrType, LLVM::Int, ArgsType]
-    @module.functions.add(name, arg_types, ObjectPtrType) do |fn, target, argc, argv|
+    arg_types = [EnvPtrType, ObjectPtrType, LLVM::Int, ArgsType]
+    @module.functions.add(name, arg_types, ObjectPtrType) do |fn, env, target, argc, argv|
+      env.name = "env"
       target.name = "target"
       argc.name = "argc"
       argv.name = "argv"
       last_method = @current_method
       begin
-	@current_method = MethodRef.new(fn, target, argc, argv)
+	@current_method = MethodRef.new(fn, env, target, argc, argv)
 	using_self(target) do
 	  yield @current_method
         end
@@ -150,10 +153,11 @@ class CodegenContext
   end
 
   class MethodRef
-    attr_reader :function, :param_target, :param_argc, :param_argv
-    def initialize(function, param_target, param_argc, param_argv)
+    attr_reader :function, :env, :param_target, :param_argc, :param_argv
+    def initialize(function, env, param_target, param_argc, param_argv)
       @entry_block_builder = nil
       @function = function
+      @env = env
       @param_target = param_target
       @param_argc = param_argc
       @param_argv = param_argv
@@ -204,9 +208,13 @@ class CodegenContext
 	attr_list_head = b.struct_gep(main_obj, 1, "attr_list_head")
 	b.store(AttributeListEntryType.pointer.null, attr_list_head)
 
-	ret_val = build_call.pup_runtime_init()
+        env = EnvPtrType.null
 
-	ret_val = build.invoke(@module.functions["pup_main"], [main_obj, LLVM.Int(0), ArgsType.null], exit_block, catch_block)
+	@current_method = Struct::FakeMethod.new(env)
+
+	ret_val = build_call.pup_runtime_init(env)
+
+	ret_val = build.invoke(@module.functions["pup_main"], [env, main_obj, LLVM.Int(0), ArgsType.null], exit_block, catch_block)
       end
       with_builder_at_end(catch_block) do |b|
 	excep = b.call(@module.functions["llvm.eh.exception"], "excep")
@@ -228,14 +236,14 @@ class CodegenContext
   #  method_name - a ruby String - this method will convert to a symbol
   #  args - a ruby array of LLVM::Values - this method will allocate the
   #         LLVM array and store the args values into it
-  def build_simple_method_invoke(receiver, method_name, *args)
+  def build_simple_method_invoke(env, receiver, method_name, *args)
     argc = LLVM::Int32.from_i(args.length)
     argv = build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{method_name}_argv")
     args.each_with_index do |arg, i|
       arg_element = build.gep(argv, [LLVM.Int(i)], "#{method_name}_argv_#{i}")
       build.store(arg, arg_element)
     end
-    build_simple_method_invoke_argv(receiver, method_name, argv, args.length)
+    build_simple_method_invoke_argv(env, receiver, method_name, argv, args.length)
   end
 
   # helper for building method callsites
@@ -243,9 +251,9 @@ class CodegenContext
   #  method_name - a ruby String (will convert to a symbol before use)
   #  argv - an LLVM array of arguments
   #  argc - ruby fixnum - the number of arguments in the argv array
-  def build_simple_method_invoke_argv(receiver, method_name, argv, argc)
+  def build_simple_method_invoke_argv(env, receiver, method_name, argv, argc)
     sym = mk_sym(method_name)
-    build_call.pup_invoke(receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
+    build_call.pup_invoke(env, receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
   end
 
   def build_call
@@ -309,8 +317,8 @@ class CodegenContext
       body = append_block do
 	with_builder_at_end do
 	  theclass = pup_class_new.param_target
-	  obj = build_simple_method_invoke(theclass, "allocate")
-	  build_simple_method_invoke_argv(obj, "initialize", pup_class_new.param_argv, pup_class_new.param_argc)
+	  obj = build_simple_method_invoke(pup_class_new.env, theclass, "allocate")
+	  build_simple_method_invoke_argv(pup_class_new.env, obj, "initialize", pup_class_new.param_argv, pup_class_new.param_argc)
 	  build.ret(obj)
 	end
       end

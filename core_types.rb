@@ -16,7 +16,10 @@ ObjectPtrType = LLVM::Type.pointer(obj_ty)
 
 ArgsType = ObjectPtrType.pointer
 
-MethodType = LLVM.Function([ObjectPtrType, LLVM::Int, ArgsType], ObjectPtrType)
+EnvType = LLVM.Struct()
+EnvPtrType = EnvType.pointer
+
+MethodType = LLVM.Function([EnvPtrType, ObjectPtrType, LLVM::Int, ArgsType], ObjectPtrType)
 
 MethodPtrType = MethodType.pointer
 MethodListEntryType = LLVM::Type.rec do |thistype|

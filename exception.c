@@ -43,18 +43,18 @@ bool pup_instanceof_exception(struct PupObject *obj)
 	return pup_object_instanceof(obj, &ExceptionClassInstance);
 }
 
-struct PupObject *pup_new_runtimeerror(const char *message)
+struct PupObject *pup_new_runtimeerror(ENV, const char *message)
 {
 	ABORT_ON(!message, "message must not be null");
-	struct PupObject *e = pup_create_object(&RuntimeErrorClassInstance);
+	struct PupObject *e = pup_create_object(env, &RuntimeErrorClassInstance);
 	pup_exception_message_set(e, pup_string_new_cstr(message));
 	return e;
 }
 
-struct PupObject *pup_new_runtimeerrorf(const char *messagefmt, ...)
+struct PupObject *pup_new_runtimeerrorf(ENV, const char *messagefmt, ...)
 {
 	va_list ap;
-	struct PupObject *e = pup_create_object(&RuntimeErrorClassInstance);
+	struct PupObject *e = pup_create_object(env, &RuntimeErrorClassInstance);
 	char message[1024];
 	va_start(ap, messagefmt);
 	vsnprintf(message, sizeof(message), messagefmt, ap);
@@ -63,9 +63,9 @@ struct PupObject *pup_new_runtimeerrorf(const char *messagefmt, ...)
 	return e;
 }
 
-void pup_raise_runtimeerror(const char *message)
+void pup_raise_runtimeerror(ENV, const char *message)
 {
-	pup_raise(pup_new_runtimeerror(message));
+	pup_raise(pup_new_runtimeerror(env, message));
 }
 
 extern struct PupObject *pup_exception_message_get(struct PupObject *target);
@@ -121,11 +121,11 @@ METH_IMPL(pup_object_raise)
 		abort();
 	}
 	if (pup_is_string(arg)) {
-		pup_raise_runtimeerror(pup_string_value_unsafe(arg));
+		pup_raise_runtimeerror(env, pup_string_value_unsafe(arg));
 		abort();
 	}
 	// TODO exception classes
-	pup_raise_runtimeerror("exception class/object expected");
+	pup_raise_runtimeerror(env, "exception class/object expected");
 	abort();
 }
 
