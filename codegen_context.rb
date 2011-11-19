@@ -311,19 +311,6 @@ class CodegenContext
     cmp2 = builder.icmp(:eq, objclass_p, class_p, "is_instance")
     builder.cond(cmp2, then_bk, else_bk)
   end
-
-  def attach_classclass_methods(class_class_instance)
-    def_method("pup_class_new") do |pup_class_new|
-      body = append_block do
-	with_builder_at_end do
-	  theclass = pup_class_new.param_target
-	  obj = build_simple_method_invoke(pup_class_new.env, theclass, "allocate")
-	  build_simple_method_invoke_argv(pup_class_new.env, obj, "initialize", pup_class_new.param_argv, pup_class_new.param_argc)
-	  build.ret(obj)
-	end
-      end
-    end
-  end
 end
 
 class CallSugar
