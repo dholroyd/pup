@@ -35,6 +35,22 @@ struct PupObject *pup_create_object(ENV, struct PupClass *type)
 	return pup_object_allocate(env, (struct PupObject *)type, 0, NULL);
 }
 
+void pup_object_destroy(struct PupObject *obj)
+{
+	struct PupAttributeListEntry *attr = obj->attr_list_head;
+	while (attr) {
+		struct PupAttributeListEntry *tmp = attr;
+		attr = attr->next;
+		free(tmp);
+	}
+}
+
+void pup_object_free(struct PupObject *obj)
+{
+	pup_object_destroy(obj);
+	free(obj);
+}
+
 /*
  * Default implementation for Object#initialize
  */
@@ -52,6 +68,20 @@ const char *pup_object_type_name(const struct PupObject *obj)
 	return pup_type_name(obj->type);
 }
 
+/*
+ * Caller must free() the result
+ */
+static char *sym_name(ENV, const int sym)
+{
+	const char *str = pup_env_sym_to_str(env, sym);
+	if (str) {
+		return strdup(str);
+	}
+	char buf[256];
+	snprintf(buf, sizeof(buf), "sym:%d", sym);
+	return strdup(buf);
+}
+
 struct PupObject *pup_invoke(ENV, struct PupObject *target, const long name_sym,
                              const long argc, struct PupObject **argv)
 {
@@ -59,9 +89,11 @@ struct PupObject *pup_invoke(ENV, struct PupObject *target, const long name_sym,
 	struct PupClass *class = target->type;
 	PupMethod *method = find_method_in_classes(class, name_sym);
 	if (!method) {
+		char *name = sym_name(env, name_sym);
 		char buf[256];
-		snprintf(buf, sizeof(buf), "undefined method `sym:%ld' for %s", name_sym, pup_object_type_name(target));
-		pup_raise_runtimeerror(buf);
+		snprintf(buf, sizeof(buf), "undefined method `%s' for %s", name, pup_object_type_name(target));
+		free(name);
+		pup_raise_runtimeerror(env, buf);
 	}
 	return (*method)(env, target, argc, argv);
 }
@@ -129,9 +161,9 @@ struct PupObject *pup_iv_get(struct PupObject *obj, const int sym)
  * Used when we want to make use of 'self' without caring if we are in class
  * or instance context.
  */
-struct PupClass *pup_class_context_from(struct PupObject *obj)
+struct PupClass *pup_class_context_from(ENV, struct PupObject *obj)
 {
-	if (pup_is_class_instance(obj)) {
+	if (pup_is_class_instance(env, obj)) {
 		return (struct PupClass *)obj;
 	}
 	return obj->type;
@@ -149,16 +181,16 @@ METH_IMPL(pup_object_to_s)
 {
 	char buf[1024];
 	pup_default_obj_cstr(target, buf, sizeof(buf));
-	return pup_string_new_cstr(buf);
+	return pup_string_new_cstr(env, buf);
 }
 
-char *pup_stringify(struct PupObject *obj)
+char *pup_stringify(ENV, struct PupObject *obj)
 {
-	if (pup_is_string(obj)) {
+	if (pup_is_string(env, obj)) {
 		return strdup(pup_string_value_unsafe(obj));
 	}
-	if (pup_instanceof_exception(obj)) {
-		const char *msg = exception_text(obj);
+	if (pup_instanceof_exception(env, obj)) {
+		const char *msg = exception_text(env, obj);
 		if (msg) {
 			return strdup(msg);
 		}
@@ -170,12 +202,25 @@ char *pup_stringify(struct PupObject *obj)
 
 METH_IMPL(pup_puts)
 {
-	pup_arity_check(1, argc);
+	pup_arity_check(env, 1, argc);
 	ABORT_ON(!argv, "puts() argv is NULL!");
-	char *str = pup_stringify(argv[0]);
+	char *str = pup_stringify(env, argv[0]);
 	puts(str);
 	free(str);
 
 	// TODO return nil
 	return NULL;
+}
+
+void pup_object_class_init(ENV, struct PupClass *class_obj)
+{
+	pup_define_method(class_obj,
+	                  pup_env_str_to_sym(env, "initialize"),
+	                  pup_object_initialize);
+	pup_define_method(class_obj,
+	                  pup_env_str_to_sym(env, "raise"),
+	                  pup_object_raise);
+	pup_define_method(class_obj,
+	                  pup_env_str_to_sym(env, "puts"),
+	                  pup_puts);
 }

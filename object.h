@@ -15,6 +15,9 @@ METH_IMPL(pup_object_allocate);
 
 struct PupObject *pup_create_object(ENV, struct PupClass *type);
 
+void pup_object_destroy(struct PupObject *obj);
+void pup_object_free(struct PupObject *obj);
+
 const char *pup_object_type_name(const struct PupObject *obj);
 
 bool pup_object_instanceof(const struct PupObject *obj,
@@ -26,3 +29,11 @@ bool pup_object_kindof(const struct PupObject *obj,
 void pup_iv_set(struct PupObject *obj, const int sym, struct PupObject *val);
 
 struct PupObject *pup_iv_get(struct PupObject *obj, const int sym);
+
+struct PupObject *pup_invoke(ENV, struct PupObject *target, const long name_sym,
+                             const long argc, struct PupObject **argv);
+
+/*
+ * Bootstrap the Object class. Used while initialising the runtime environment
+ */
+void pup_object_class_init(ENV, struct PupClass *class_obj);

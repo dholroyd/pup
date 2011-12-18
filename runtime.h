@@ -6,4 +6,4 @@
                                long argc, \
                                struct PupObject **argv)
 
-void pup_arity_check(int expected, int actual);
+void pup_arity_check(ENV, int expected, int actual);

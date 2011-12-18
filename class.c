@@ -23,12 +23,11 @@ struct PupClass {
 	struct PupClass *scope;  /* for Constant lookup */
 };
 
-extern struct PupClass ClassClassInstance;
-
-struct PupClass *pup_create_class(struct PupClass *class_class,
-                               struct PupClass *superclass,
-                               struct PupClass *scope,
-			       const char *name)
+struct PupClass *pup_create_class(ENV,
+                                  struct PupClass *class_class,
+                                  struct PupClass *superclass,
+                                  struct PupClass *scope,
+			          const char *name)
 {
 	struct PupClass *class = (struct PupClass *)malloc(sizeof(struct PupClass));
 	obj_init(&class->obj_header, class_class);
@@ -128,23 +127,59 @@ struct PupObject *pup_const_get(struct PupClass *clazz, const int sym)
 	return result;
 }
 
-struct PupObject *pup_const_get_required(struct PupClass *clazz, const int sym)
+struct PupObject *pup_const_get_required(ENV, struct PupClass *clazz, const int sym)
 {
 	struct PupObject *res = pup_const_get(clazz, sym);
 	if (!res) {
 		// TODO: NameError
-		pup_raise(pup_new_runtimeerrorf("uninitialized constant sym:%ld",
-		                                sym));
+		pup_raise(pup_new_runtimeerrorf(env, "uninitialized constant %s",
+		                                pup_env_sym_to_str(env, sym)));
 	}
 	return res;
 }
 
-bool pup_is_class_instance(const struct PupObject *obj)
+bool pup_is_class_instance(ENV, const struct PupObject *obj)
 {
-	return obj->type == &ClassClassInstance;
+	return obj->type == pup_env_get_classclass(env);
 }
 
 METH_IMPL(pup_class_to_s)
 {
-	return pup_string_new_cstr(((struct PupClass *)target)->name);
+	return pup_string_new_cstr(env, ((struct PupClass *)target)->name);
+}
+
+void pup_class_free(struct PupClass *class)
+{
+	struct MethodListEntry *pos = class->method_list_head;
+	while (pos) {
+		struct MethodListEntry *tmp = pos;
+		pos = pos->next;
+		free(tmp);
+	}
+	free(class->name);
+	pup_object_destroy((struct PupObject *)class);
+	free(class);
+}
+
+METH_IMPL(pup_class_new)
+{
+	struct PupObject *res =
+		pup_invoke(env, target, pup_env_str_to_sym(env, "allocate"),
+		           0 , NULL);
+	pup_invoke(env, res, pup_env_str_to_sym(env, "initialize"),
+	           argc , argv);
+	return res;
+}
+
+void pup_class_class_init(ENV, struct PupClass *class_class)
+{
+	pup_define_method(class_class,
+	                  pup_env_str_to_sym(env, "new"),
+	                  pup_class_new);
+	pup_define_method(class_class,
+	                  pup_env_str_to_sym(env, "allocate"),
+	                  pup_object_allocate);
+	pup_define_method(class_class,
+	                  pup_env_str_to_sym(env, "to_s"),
+	                  pup_class_to_s);
 }

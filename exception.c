@@ -5,12 +5,10 @@
 #include "abortf.h"
 #include "core_types.h"
 #include "runtime.h"
+#include "class.h"
 #include "raise.h"
 #include "string.h"
 #include "object.h"
-
-extern struct PupClass ExceptionClassInstance;
-extern struct PupClass RuntimeErrorClassInstance;
 
 /*
 static void dump_stack()
@@ -35,31 +33,36 @@ static void dump_stack()
 }
 */
 
-extern void pup_exception_message_set(struct PupObject *target,
-                                      struct PupObject *value);
-
-bool pup_instanceof_exception(struct PupObject *obj)
+void pup_exception_message_set(ENV,
+                               struct PupObject *target,
+                               struct PupObject *value)
 {
-	return pup_object_instanceof(obj, &ExceptionClassInstance);
+	const int sym_message = pup_env_str_to_sym(env, "@message");
+	pup_iv_set(target, sym_message, value);
+}
+
+bool pup_instanceof_exception(ENV, struct PupObject *obj)
+{
+	return pup_object_instanceof(obj, pup_env_get_classexception(env));
 }
 
 struct PupObject *pup_new_runtimeerror(ENV, const char *message)
 {
 	ABORT_ON(!message, "message must not be null");
-	struct PupObject *e = pup_create_object(env, &RuntimeErrorClassInstance);
-	pup_exception_message_set(e, pup_string_new_cstr(message));
+	struct PupObject *e = pup_create_object(env, pup_env_get_classruntimeerror(env));
+	pup_exception_message_set(env, e, pup_string_new_cstr(env, message));
 	return e;
 }
 
 struct PupObject *pup_new_runtimeerrorf(ENV, const char *messagefmt, ...)
 {
 	va_list ap;
-	struct PupObject *e = pup_create_object(env, &RuntimeErrorClassInstance);
+	struct PupObject *e = pup_create_object(env, pup_env_get_classruntimeerror(env));
 	char message[1024];
 	va_start(ap, messagefmt);
 	vsnprintf(message, sizeof(message), messagefmt, ap);
 	va_end(ap);
-	pup_exception_message_set(e, pup_string_new_cstr(message));
+	pup_exception_message_set(env, e, pup_string_new_cstr(env, message));
 	return e;
 }
 
@@ -68,22 +71,26 @@ void pup_raise_runtimeerror(ENV, const char *message)
 	pup_raise(pup_new_runtimeerror(env, message));
 }
 
-extern struct PupObject *pup_exception_message_get(struct PupObject *target);
-
-const char *exception_text(struct PupObject *ex)
+struct PupObject *pup_exception_message_get(ENV, struct PupObject *target)
 {
-	struct PupObject *msg = pup_exception_message_get(ex);
+	const int sym_message = pup_env_str_to_sym(env, "@message");
+	return pup_iv_get(target, sym_message);
+}
+
+const char *exception_text(ENV, struct PupObject *ex)
+{
+	struct PupObject *msg = pup_exception_message_get(env, ex);
 	if (msg) {
-		return pup_string_value(msg);
+		return pup_string_value(env, msg);
 	}
 	return pup_object_type_name(ex);
 }
 
-void pup_handle_uncaught_exception(const struct _Unwind_Exception *e)
+void pup_handle_uncaught_exception(ENV, const struct _Unwind_Exception *e)
 {
 	struct PupObject *ex = extract_exception_obj(e);
 	fprintf(stderr, "Uncaught %s: \"%s\"\n",
-	       pup_object_type_name((struct PupObject *)ex), exception_text(ex));
+	       pup_object_type_name((struct PupObject *)ex), exception_text(env, ex));
 	exit(1);
 }
 
@@ -92,21 +99,21 @@ METH_IMPL(pup_exception_to_s)
 	char buf[1024];
 	snprintf(buf, sizeof(buf), "#<%s: %s>",
 	         pup_object_type_name(target),
-	         exception_text(((struct PupObject *)target)));
-	return pup_string_new_cstr(buf);
+	         exception_text(env, ((struct PupObject *)target)));
+	return pup_string_new_cstr(env, buf);
 }
 
 METH_IMPL(pup_exception_message)
 {
-	return pup_exception_message_get(target);
+	return pup_exception_message_get(env, target);
 }
 
 METH_IMPL(pup_exception_initialize)
 {
 	if (argc == 1) {
-		pup_exception_message_set(target, argv[0]);
+		pup_exception_message_set(env, target, argv[0]);
 	} else if (argc > 1) {
-		pup_arity_check(1, argc);
+		pup_arity_check(env, 1, argc);
 	}
 	return NULL;
 }
@@ -114,13 +121,13 @@ METH_IMPL(pup_exception_initialize)
 // TODO move to Kernel class
 METH_IMPL(pup_object_raise)
 {
-	pup_arity_check(1, argc);
+	pup_arity_check(env, 1, argc);
 	struct PupObject *arg = argv[0];
-	if (pup_object_kindof(arg, &ExceptionClassInstance)) {
+	if (pup_object_kindof(arg, pup_env_get_classexception(env))) {
 		pup_raise(arg);
 		abort();
 	}
-	if (pup_is_string(arg)) {
+	if (pup_is_string(env, arg)) {
 		pup_raise_runtimeerror(env, pup_string_value_unsafe(arg));
 		abort();
 	}
@@ -129,3 +136,12 @@ METH_IMPL(pup_object_raise)
 	abort();
 }
 
+void pup_exception_class_init(ENV, struct PupClass *class_excep)
+{
+	pup_define_method(class_excep,
+	                  pup_env_str_to_sym(env, "initialize"),
+	                  pup_exception_initialize);
+	pup_define_method(class_excep,
+	                  pup_env_str_to_sym(env, "message"),
+	                  pup_exception_message);
+}

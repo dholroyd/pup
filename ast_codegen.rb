@@ -42,7 +42,7 @@ class IfStmt
     bkcontinue = ctx.current_method.function.basic_blocks.append("ifcontinue")
     ctx.with_builder_at_end(bkcond) do |b|
       val = cond.codegen(ctx)
-      cmp = b.icmp(:eq, val, ctx.global.FalseObjInstance, "is_false")
+      cmp = b.icmp(:eq, val, ctx.build_call.pup_env_get_falseinstance(ctx.current_method.env), "is_false")
       b.cond(cmp, bkelse, bkthen)
     end
     ctx.with_builder_at_end(bkthen) do |b|
@@ -101,8 +101,8 @@ class VarOrInvokeExpr
 
   def codegen_var_access(ctx)
     if const?
-      self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
-      ctx.build_call.pup_const_get_required(self_class, ctx.mk_sym(@name.name), "#{@name.name}_access")
+      self_class = ctx.build_call.pup_class_context_from(ctx.current_method.env, ctx.self_ref, "self_class")
+      ctx.build_call.pup_const_get_required(ctx.current_method.env, self_class, ctx.mk_sym(@name.name), "#{@name.name}_access")
     else
       local = ctx.current_method.get_local(@name.name)
       ctx.build.load(local, "#{@name.name}_access")
@@ -160,7 +160,8 @@ class StringLiteral
     ctx.eval_build do
       data = global_string(str)
       src_ptr = gep(data, [LLVM.Int(0),LLVM.Int(0)], "src_ptr")
-      ctx.build_call.pup_string_new_cstr(src_ptr, "str_#{me.sanitise(str)}")
+      ctx.build_call.pup_string_new_cstr(ctx.current_method.env,
+                                         src_ptr, "str_#{me.sanitise(str)}")
     end
   end
 
@@ -177,9 +178,9 @@ end
 class BoolLiteral
   def codegen(ctx)
     if true?
-      ctx.global.TrueObjInstance
+      ctx.build_call.pup_env_get_trueinstance(ctx.current_method.env)
     else
-      ctx.global.FalseObjInstance
+      ctx.build_call.pup_env_get_falseinstance(ctx.current_method.env)
     end
   end
 end
@@ -194,9 +195,9 @@ class ClassDef
     class_name_ref = ctx.global_string_constant(class_name)
     superclass_ref = find_superclass(ctx)
     ctx.eval_build do
-      self_class = ctx.build_call.pup_class_context_from(ctx.self_ref, "self_class")
-      classdef = ctx.build_call.pup_create_class(
-                      ctx.global.ClassClassInstance,
+      self_class = ctx.build_call.pup_class_context_from(ctx.current_method.env, ctx.self_ref, "self_class")
+      classdef = ctx.build_call.pup_create_class(ctx.current_method.env, 
+                      ctx.build_call.pup_env_get_classclass(ctx.current_method.env),
 		      superclass_ref,
                       self_class,
 		      class_name_ref,
@@ -215,7 +216,7 @@ class ClassDef
     if extends
       throw "TODO: implement lookup of superclass by name (i.e. #{extends.inspect})"
     else
-      ctx.global.ObjectClassInstance
+      ctx.build_call.pup_env_get_classobject(ctx.current_method.env)
     end
   end
 end
@@ -252,7 +253,7 @@ class MethodDef
     when_not_class = ctx.current_method.function.basic_blocks.append("when_not_class")
     ctx.gen_if_instance_of(ctx.build,
                            val,
-                           ctx.global.ClassClassInstance,
+                           ctx.build_call.pup_env_get_classclass(ctx.current_method.env),
                            when_class, when_not_class)
     ctx.with_builder_at_end(when_not_class) do |b|
       ctx.build_call.puts(ctx.global_string_constant("'self' is not a Class instance"))
@@ -285,7 +286,7 @@ class BeginStmt
       sel = b.call(ctx.module.functions["llvm.eh.selector"],
 		   dwarf_ex,
 		   ctx.module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-		   ctx.global.ExceptionClassInstance, "sel")
+                   ctx.build_call.pup_env_get_classexception(ctx.current_method.env), "sel")
       excep = ctx.build_call.extract_exception_obj(dwarf_ex, "excep")
       excep_type = ctx.build.load(ctx.build.struct_gep(excep, 0), "excep_type")
       excep_type_asobj = ctx.build.bit_cast(excep_type, ::Pup::Core::Types::ObjectPtrType, "excep_type_asobj")

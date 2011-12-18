@@ -24,8 +24,6 @@ struct PupUnwindException {
 	struct _Unwind_Exception unwindException;
 };
 
-extern struct PupClass ExceptionClassInstance;
-
 static void pup_uwind_exception_cleanup(
 	const _Unwind_Reason_Code reason,
 	struct _Unwind_Exception* cleanup

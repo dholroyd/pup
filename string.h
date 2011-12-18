@@ -1,7 +1,7 @@
 
 #include <stdbool.h>
 
-struct PupObject *pup_string_new_cstr(const char *str);
+struct PupObject *pup_string_new_cstr(ENV, const char *str);
 
 /**
  * Returns the C string value from the given object, without a runtime check
@@ -10,6 +10,6 @@ struct PupObject *pup_string_new_cstr(const char *str);
  */
 const char *pup_string_value_unsafe(struct PupObject *str);
 
-const char *pup_string_value(struct PupObject *str);
+const char *pup_string_value(ENV, struct PupObject *str);
 
-bool pup_is_string(struct PupObject *obj);
+bool pup_is_string(ENV, struct PupObject *obj);

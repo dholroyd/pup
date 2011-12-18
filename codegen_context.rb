@@ -32,7 +32,6 @@ class CodegenContext
     @call_sugar = CallSugar.new(self)
     @global_sugar = GlobalSugar.new(self)
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
-    @runtime_builder.build_puts_meth
     @runtime_builder.init_types
     env = EnvPtrType.null
     @current_method = Struct.new("FakeMethod", :env).new(env)
@@ -50,30 +49,6 @@ class CodegenContext
     str = LLVM::ConstantArray.string(value)
     name = "str#{value}" unless name
     global_constant(str, str, name).bit_cast(CStrType)
-  end
-
-  def build_class_instance(class_name, super_class_instance, meth_list_head=nil)
-    super_pointer = super_class_instance.nil? ? ClassType.pointer.null : super_class_instance
-    const_struct(
-      # object header,
-      const_struct(
-	# this.class
-        global.ClassClassInstance,
-	# attribute list head
-	AttributeListEntryType.pointer.null_pointer
-      ),
-      super_class_instance,
-      # class name,
-      global_string_constant(class_name),
-      # method list head,
-      meth_list_head || MethodListEntryType.pointer.null_pointer,
-      # lexical scope (TODO anything to do here?)
-      ClassType.pointer.null
-    )
-  end
-
-  def const_struct(*members)
-    LLVM::ConstantStruct.const(members.length) { |i| members[i] }
   end
 
   def append_block(name = "")
@@ -202,17 +177,11 @@ class CodegenContext
       catch_block = mainfn.basic_blocks.append("catch")
       exit_block = mainfn.basic_blocks.append("exit")
       with_builder_at_end(entry) do |b|
-	main_obj = b.alloca(ObjectType, "main_obj")
-	main_obj_class = b.struct_gep(main_obj, 0, "main_obj_class")
-	b.store(global.Main, main_obj_class)
-	attr_list_head = b.struct_gep(main_obj, 1, "attr_list_head")
-	b.store(AttributeListEntryType.pointer.null, attr_list_head)
-
-        env = EnvPtrType.null
+        env = build_call.pup_runtime_env_create()
+	main_class = build_call.pup_env_get_classobject(env)
+	main_obj = build_call.pup_create_object(env, main_class)
 
 	@current_method = Struct::FakeMethod.new(env)
-
-	ret_val = build_call.pup_runtime_init(env)
 
 	ret_val = build.invoke(@module.functions["pup_main"], [env, main_obj, LLVM.Int(0), ArgsType.null], exit_block, catch_block)
       end
@@ -221,8 +190,8 @@ class CodegenContext
 	sel = b.call(@module.functions["llvm.eh.selector"],
 	             excep,
 	             @module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-	             global.ExceptionClassInstance, "sel")
-	build_call.pup_handle_uncaught_exception(excep)
+	             build_call.pup_env_get_classexception(current_method.env), "sel")
+	build_call.pup_handle_uncaught_exception(current_method.env, excep)
 	b.br(exit_block)
       end
       with_builder_at_end(exit_block) do |b|
@@ -284,32 +253,11 @@ class CodegenContext
     !@landingpad.nil?
   end
 
-  def build_meth_list_entry(name, fn_ptr, next_entry = nil)
-    entry = const_struct(
-      mk_sym(name),
-      fn_ptr,
-      next_entry || MethodListEntryPtrType.null_pointer
-    )
-    global_constant(MethodListEntryType, entry, "meth_entry_#{name}")
-  end
-
   # Makes an LLVM Int from name.to_sym.to_i
   def mk_sym(name)
-    LLVM.Int(name.to_sym.to_i)
-  end
-
-  private
-
-  def class_ptr_from_obj_ptr(builder, obj_ptr)
-    raise "not a pointer to object" unless obj_ptr.type == ::Pup::Core::Types::ObjectPtrType
-    obj_class = builder.struct_gep(obj_ptr, 0, "obj_class")
-    return builder.load(obj_class, "class_p")
-  end
-
-  def gen_if_instance_of(builder, obj_p, class_p, then_bk, else_bk)
-    objclass_p = class_ptr_from_obj_ptr(builder, obj_p)
-    cmp2 = builder.icmp(:eq, objclass_p, class_p, "is_instance")
-    builder.cond(cmp2, then_bk, else_bk)
+    ret = build_call.pup_env_str_to_sym(current_method.env, global_string_constant(name))
+    ret.name = "sym_#{name}"
+    ret
   end
 end
 
