@@ -16,7 +16,7 @@ struct PupString {
 struct PupObject *pup_string_new_cstr(ENV, const char *str)
 {
 	struct PupString *string = malloc(sizeof(struct PupString));
-	if (!malloc) {
+	if (!string) {
 		return NULL;
 	}
 	obj_init(&(string->obj_header), pup_env_get_classstring(env));
