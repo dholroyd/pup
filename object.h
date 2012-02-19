@@ -17,13 +17,18 @@ METH_IMPL(pup_object_allocate);
 
 /**
  * Until we have instance methods, we assign these functions to a member of
- * stryct PupClass
+ * struct PupClass
  */
 struct PupObject *pup_object_allocate_instance(ENV, struct PupClass *type);
 
+/**
+ * GC cleanup
+ */
+void pup_object_destroy_instance(struct PupObject *obj);
+
 struct PupObject *pup_create_object(ENV, struct PupClass *type);
 
-//void pup_object_destroy(struct PupObject *obj);
+void pup_object_destroy(struct PupObject *obj);
 //void pup_object_free(struct PupObject *obj);
 
 const char *pup_object_type_name(const struct PupObject *obj);

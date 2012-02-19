@@ -177,7 +177,12 @@ struct PupObject *pup_env_get_falseinstance(ENV)
 	return env->object_false;
 }
 
-void *pup_alloc(ENV, size_t size)
+void *pup_alloc_obj(ENV, size_t size)
 {
-	return pup_heap_alloc(&env->heap, size);
+	return pup_heap_alloc(&env->heap, size, PUP_KIND_OBJ);
+}
+
+void *pup_alloc_attr(ENV, size_t size)
+{
+	return pup_heap_alloc(&env->heap, size, PUP_KIND_ATTR);
 }

@@ -7,6 +7,7 @@
 #include <atomic_ops.h>
 #include "abortf.h"
 #include "heap.h"
+#include "object.h"
 
 #define REGION_SIZE 0x100000
 #define MAX_REGION_ALLOCATION 0x1000
@@ -18,6 +19,12 @@ struct PupHeapRegion {
 	struct PupHeapRegion *next;
 };
 
+// TODO: optimise HeapObject layout
+struct HeapObject {
+	size_t object_size;  // the requested size (NB not HeapObject's size)
+	unsigned int kind : 1;  // is it an object or an AttrListEntry
+	char data[0];  // actual object data starts from here
+};
 
 static struct PupHeapRegion *allocate_region()
 {
@@ -43,8 +50,27 @@ static struct PupHeapRegion *allocate_region()
 	return region;
 }
 
+static size_t alloc_size_for(size_t request_size)
+{
+	return request_size + sizeof(struct HeapObject);
+}
+
+static void destroy_region_objects(struct PupHeapRegion *region)
+{
+	void *ptr = region->region;
+	while (ptr < region->allocated) {
+		struct HeapObject *obj = (struct HeapObject *)ptr;
+		switch (obj->kind) {
+		    case PUP_KIND_OBJ:
+			pup_object_destroy((struct PupObject *)obj->data);
+		}
+		ptr += alloc_size_for(obj->object_size);
+	}
+}
+
 static void free_region(struct PupHeapRegion *region)
 {
+	destroy_region_objects(region);
 	if (munmap(region->region, REGION_SIZE)) {
 		fprintf(stderr, "munmap(%p, %d) unexpectedly failed: %s", region->region, REGION_SIZE, strerror(errno));
 	}
@@ -122,14 +148,19 @@ void pup_heap_destroy(struct PupHeap *heap)
 
 static int have_room_for(struct PupHeapRegion *region, size_t size)
 {
-	return region->allocated + size <= region->end;
+	return region->allocated + alloc_size_for(size) <= region->end;
 }
 
-static void *make_room_for(struct PupHeapRegion *region, size_t size)
+static void *make_room_for(struct PupHeapRegion *region,
+                           size_t size,
+                           enum PupHeapKind kind)
 {
 	void *tmp = region->allocated;
-	region->allocated += size;
-	return tmp;
+	region->allocated += alloc_size_for(size);
+	struct HeapObject *obj = (struct HeapObject *)tmp;
+	obj->object_size = size;
+	obj->kind = kind;
+	return obj->data;
 }
 
 static void add_to_global_heap(struct PupHeap *heap,
@@ -147,7 +178,7 @@ static void add_to_global_heap(struct PupHeap *heap,
 	}
 }
 
-static void *thread_local_alloc(struct PupHeap *heap, size_t size)
+static void *thread_local_alloc(struct PupHeap *heap, size_t size, enum PupHeapKind kind)
 {
 	struct PupHeapRegion *region = get_local_region(heap);
 	if (!have_room_for(region, size)) {
@@ -164,7 +195,7 @@ static void *thread_local_alloc(struct PupHeap *heap, size_t size)
 		ABORTF_ON(res, "set_local_region() failed with %d", res);
 		add_to_global_heap(heap, old_region);
 	}
-	return make_room_for(region, size);
+	return make_room_for(region, size, kind);
 }
 
 static int is_large_object(size_t size)
@@ -172,10 +203,10 @@ static int is_large_object(size_t size)
 	return size > MAX_REGION_ALLOCATION;
 }
 
-void *pup_heap_alloc(struct PupHeap *heap, size_t size)
+void *pup_heap_alloc(struct PupHeap *heap, size_t size, enum PupHeapKind kind)
 {
 	if (is_large_object(size)) {
 		ABORTF("Large object allocator not implemented yet! (%ld bytes)", size);
 	}
-	return thread_local_alloc(heap, size);
+	return thread_local_alloc(heap, size, kind);
 }

@@ -22,6 +22,7 @@ struct PupClass {
 	struct MethodListEntry *method_list_head;
 	struct PupClass *scope;  /* for Constant lookup */
 	struct PupObject *(*allocate_instance)(ENV, struct PupClass *);  /* hax: until we have instance methods */
+	void (*destroy_instance)(struct PupObject *);
 };
 
 void pup_internal_class_init(ENV,
@@ -29,7 +30,8 @@ void pup_internal_class_init(ENV,
                              struct PupClass *superclass,
                              struct PupClass *scope,
                              const char *name,
-                             struct PupObject *(*allocate_instance)(ENV, struct PupClass *))
+                             struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
+                             void (*destroy_instance)(struct PupObject *))
 {
 	ABORTF_ON(!name, "'name' must not ne null");
 	ABORTF_ON(!allocate_instance, "'allocate_instance' must not ne null");
@@ -38,13 +40,15 @@ void pup_internal_class_init(ENV,
 	class->method_list_head = NULL;
 	class->scope = scope;
 	class->allocate_instance = allocate_instance;
+	class->destroy_instance = destroy_instance;
 }
 
 struct PupClass *pup_internal_create_class(ENV,
                                            struct PupClass *superclass,
                                            struct PupClass *scope,
                                            const char *name,
-                                           struct PupObject *(*allocate_instance)(ENV, struct PupClass *))
+                                           struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
+                                           void (*destroy_instance)(struct PupObject *))
 {
 	ABORTF_ON(!superclass, "'superclass' must not be NULL when creating class %s", name);
 	ABORTF_ON(!allocate_instance, "'allocate_instance' must not be NULL when creating class %s", name);
@@ -53,7 +57,7 @@ struct PupClass *pup_internal_create_class(ENV,
 	                                 pup_env_str_to_sym(env, "new"),
 	                                 0, NULL);
 	struct PupClass *class = (struct PupClass *)o;
-	pup_internal_class_init(env, class, superclass, scope, name, allocate_instance);
+	pup_internal_class_init(env, class, superclass, scope, name, allocate_instance, destroy_instance);
 	return class;
 }
 
@@ -66,7 +70,8 @@ struct PupClass *pup_create_class(ENV,
 	                                 superclass,
 	                                 scope,
 	                                 name,
-	                                 &pup_object_allocate_instance);
+	                                 &pup_object_allocate_instance,
+	                                 &pup_object_destroy_instance);
 }
 
 // TODO: a name better differentiated from pup_class_allocate_instance()
@@ -75,13 +80,25 @@ struct PupObject *pup_internal_class_allocate_instance(
 	struct PupClass *type
 ) {
 	struct PupObject *obj =
-		(struct PupObject *)pup_alloc(env, sizeof(struct PupClass));
+		(struct PupObject *)pup_alloc_obj(env, sizeof(struct PupClass));
 	obj_init(obj, type);
 	//struct PupClass *clazz = (struct PupClass *)obj;
 	// TODO: NULL any fields?
 	return obj;
 }
 
+void pup_internal_class_destroy_instance(struct PupObject *obj)
+{
+	struct PupClass *class = (struct PupClass *)obj;
+	struct MethodListEntry *pos = class->method_list_head;
+	while (pos) {
+		struct MethodListEntry *tmp = pos;
+		pos = pos->next;
+		free(tmp);
+	}
+	free(class->name);
+	pup_object_destroy_instance(obj);
+}
 
 
 struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_object)
@@ -89,7 +106,8 @@ struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_obj
 	struct PupClass *class =
 		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
 	pup_internal_class_init(env, class, class_object, class_object, "Class",
-	                        &pup_internal_class_allocate_instance);
+	                        &pup_internal_class_allocate_instance,
+	                        &pup_internal_class_destroy_instance);
 	return class;
 }
 
@@ -224,6 +242,11 @@ void pup_class_free(struct PupClass *class)
 	free(class);
 }
 */
+
+void pup_class_destroy_instance(struct PupClass *class, struct PupObject *obj)
+{
+	class->destroy_instance(obj);
+}
 
 METH_IMPL(pup_class_new)
 {

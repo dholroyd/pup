@@ -22,7 +22,8 @@ struct PupClass *pup_bootstrap_create_classobject(ENV)
 	struct PupClass *class =
 		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
 	pup_internal_class_init(env, class, NULL, NULL, "Object",
-	                        &pup_object_allocate_instance);
+	                        &pup_object_allocate_instance,
+	                        &pup_object_destroy_instance);
 	return class;
 }
 
@@ -39,9 +40,14 @@ METH_IMPL(pup_object_allocate)
 
 struct PupObject *pup_object_allocate_instance(ENV, struct PupClass *type)
 {
-	struct PupObject *obj = (struct PupObject *)pup_alloc(env, sizeof(struct PupObject));
+	struct PupObject *obj = (struct PupObject *)pup_alloc_obj(env, sizeof(struct PupObject));
 	obj_init(obj, type);
 	return obj;
+}
+
+void pup_object_destroy_instance(struct PupObject *obj)
+{
+	// nothing do do
 }
 
 struct PupObject *pup_create_object(ENV, struct PupClass *type)
@@ -49,17 +55,21 @@ struct PupObject *pup_create_object(ENV, struct PupClass *type)
 	ABORTF_ON(!type, "'type' must not be null");
 	return pup_object_allocate(env, (struct PupObject *)type, 0, NULL);
 }
-/*
+
 void pup_object_destroy(struct PupObject *obj)
 {
+	pup_class_destroy_instance(obj->type, obj);
+
+	/*
 	struct PupAttributeListEntry *attr = obj->attr_list_head;
 	while (attr) {
 		struct PupAttributeListEntry *tmp = attr;
 		attr = attr->next;
 		free(tmp);
 	}
+	*/
 }
-
+/*
 void pup_object_free(struct PupObject *obj)
 {
 	pup_object_destroy(obj);
@@ -146,7 +156,7 @@ static struct PupAttributeListEntry *create_attr(ENV, const int sym,
 					      struct PupAttributeListEntry *next)
 {
 	struct PupAttributeListEntry *attr
-		= pup_alloc(env, sizeof(struct PupAttributeListEntry));
+		= pup_alloc_attr(env, sizeof(struct PupAttributeListEntry));
 	attr->name_sym = sym;
 	attr->value = val;
 	attr->next = next;

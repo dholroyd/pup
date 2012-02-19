@@ -20,13 +20,15 @@ void pup_internal_class_init(ENV,
                              struct PupClass *superclass,
                              struct PupClass *scope,
                              const char *name,
-                             struct PupObject *(*allocate_instance)(ENV, struct PupClass *));
+                             struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
+                             void (*destroy_instance)(struct PupObject *));
 
 struct PupClass *pup_internal_create_class(ENV,
                                   struct PupClass *superclass,
                                   struct PupClass *scope,
                                   const char *name,
-                                  struct PupObject *(*allocate_instance)(ENV, struct PupClass *));
+                                  struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
+                                  void (*destroy_instance)(struct PupObject *));
 
 struct PupClass *pup_create_class(ENV,
                                   struct PupClass *superclass,
@@ -38,6 +40,7 @@ struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_obj
 void pup_define_method(struct PupClass *class, const long name_sym, PupMethod *method);
 
 //void pup_class_free(struct PupClass *clazz);
+void pup_class_destroy_instance(struct PupClass *class, struct PupObject *obj);
 
 void pup_const_set(ENV, struct PupClass* clazz, const int sym, struct PupObject *val);
 
