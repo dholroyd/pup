@@ -21,20 +21,75 @@ struct PupClass {
 	char *name;
 	struct MethodListEntry *method_list_head;
 	struct PupClass *scope;  /* for Constant lookup */
+	struct PupObject *(*allocate_instance)(ENV, struct PupClass *);  /* hax: until we have instance methods */
 };
 
-struct PupClass *pup_create_class(ENV,
-                                  struct PupClass *class_class,
-                                  struct PupClass *superclass,
-                                  struct PupClass *scope,
-			          const char *name)
+void pup_internal_class_init(ENV,
+                             struct PupClass *class,
+                             struct PupClass *superclass,
+                             struct PupClass *scope,
+                             const char *name,
+                             struct PupObject *(*allocate_instance)(ENV, struct PupClass *))
 {
-	struct PupClass *class = (struct PupClass *)malloc(sizeof(struct PupClass));
-	obj_init(&class->obj_header, class_class);
+	ABORTF_ON(!name, "'name' must not ne null");
+	ABORTF_ON(!allocate_instance, "'allocate_instance' must not ne null");
 	class->name = strdup(name);
 	class->superclass = superclass;
 	class->method_list_head = NULL;
 	class->scope = scope;
+	class->allocate_instance = allocate_instance;
+}
+
+struct PupClass *pup_internal_create_class(ENV,
+                                           struct PupClass *superclass,
+                                           struct PupClass *scope,
+                                           const char *name,
+                                           struct PupObject *(*allocate_instance)(ENV, struct PupClass *))
+{
+	ABORTF_ON(!superclass, "'superclass' must not be NULL when creating class %s", name);
+	ABORTF_ON(!allocate_instance, "'allocate_instance' must not be NULL when creating class %s", name);
+	struct PupClass *class_class = pup_env_get_classclass(env);
+	struct PupObject *o = pup_invoke(env, (struct PupObject *)class_class,
+	                                 pup_env_str_to_sym(env, "new"),
+	                                 0, NULL);
+	struct PupClass *class = (struct PupClass *)o;
+	pup_internal_class_init(env, class, superclass, scope, name, allocate_instance);
+	return class;
+}
+
+struct PupClass *pup_create_class(ENV,
+                                  struct PupClass *superclass,
+                                  struct PupClass *scope,
+                                  const char *name)
+{
+	return pup_internal_create_class(env,
+	                                 superclass,
+	                                 scope,
+	                                 name,
+	                                 &pup_object_allocate_instance);
+}
+
+// TODO: a name better differentiated from pup_class_allocate_instance()
+struct PupObject *pup_internal_class_allocate_instance(
+	ENV,
+	struct PupClass *type
+) {
+	struct PupObject *obj =
+		(struct PupObject *)pup_alloc(env, sizeof(struct PupClass));
+	obj_init(obj, type);
+	//struct PupClass *clazz = (struct PupClass *)obj;
+	// TODO: NULL any fields?
+	return obj;
+}
+
+
+
+struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_object)
+{
+	struct PupClass *class =
+		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
+	pup_internal_class_init(env, class, class_object, class_object, "Class",
+	                        &pup_internal_class_allocate_instance);
 	return class;
 }
 
@@ -110,9 +165,10 @@ bool pup_is_descendant_or_same(const struct PupClass *ancestor,
 	return false;
 }
 
-void pup_const_set(struct PupClass* clazz, const int sym, struct PupObject *val)
+void pup_const_set(ENV, struct PupClass* clazz,
+                   const int sym, struct PupObject *val)
 {
-	pup_iv_set(&clazz->obj_header, sym, val);
+	pup_iv_set(env, &clazz->obj_header, sym, val);
 }
 
 struct PupObject *pup_const_get(struct PupClass *clazz, const int sym)
@@ -143,11 +199,18 @@ bool pup_is_class_instance(ENV, const struct PupObject *obj)
 	return obj->type == pup_env_get_classclass(env);
 }
 
+struct PupObject *pup_class_allocate_instance(ENV, struct PupClass *clazz)
+{
+	ABORTF_ON(!clazz, "clazz must not be null");
+	ABORTF_ON(!clazz->allocate_instance, "clazz->allocate_instance must not be null for class %p", clazz);
+	return clazz->allocate_instance(env, clazz);
+}
+
 METH_IMPL(pup_class_to_s)
 {
 	return pup_string_new_cstr(env, ((struct PupClass *)target)->name);
 }
-
+/*
 void pup_class_free(struct PupClass *class)
 {
 	struct MethodListEntry *pos = class->method_list_head;
@@ -160,12 +223,14 @@ void pup_class_free(struct PupClass *class)
 	pup_object_destroy((struct PupObject *)class);
 	free(class);
 }
+*/
 
 METH_IMPL(pup_class_new)
 {
 	struct PupObject *res =
 		pup_invoke(env, target, pup_env_str_to_sym(env, "allocate"),
 		           0 , NULL);
+	// return value ignored,
 	pup_invoke(env, res, pup_env_str_to_sym(env, "initialize"),
 	           argc , argv);
 	return res;

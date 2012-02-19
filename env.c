@@ -4,9 +4,12 @@
 #include "symtable.h"
 #include "object.h"
 #include "class.h"
+#include "string.h"
 #include "exception.h"
+#include "heap.h"
 
 struct RuntimeEnv {
+	struct PupHeap heap;
 	struct SymTable *sym_tab;
 	struct PupClass *class_object;
 	struct PupClass *class_class;
@@ -26,6 +29,7 @@ void pup_runtime_env_destroy(struct RuntimeEnv *env)
 	if (env->sym_tab) {
 		pup_sym_table_destroy(env->sym_tab);
 	}
+	/*
 	pup_object_free(env->object_false);
 	pup_object_free(env->object_true);
 	pup_class_free(env->class_false);
@@ -36,74 +40,70 @@ void pup_runtime_env_destroy(struct RuntimeEnv *env)
 	pup_class_free(env->class_string);
 	pup_class_free(env->class_class);
 	pup_class_free(env->class_object);
+	*/
+	pup_heap_destroy(&env->heap);
 	free(env);
 }
 
 static void runtime_init(struct RuntimeEnv *env)
 {
-	env->class_object = pup_create_class(env, NULL,  // no class 'Class' yet!
-	                                     NULL,  // no superclass for Object
-	                                     NULL,  // no lexical scope
-	                                     "Object");
-	env->class_class = pup_create_class(env, NULL,  // no class 'Class' yet
-	                                    env->class_object,  // super=Object
-	                                    NULL,  // no lexical scope
-	                                    "Class");
+	pup_heap_init(&env->heap);
+	env->class_object = pup_bootstrap_create_classobject(env);
+	env->class_class = pup_bootstrap_create_classclass(env,
+	                                                   env->class_object);  // super=Object
 	obj_init((struct PupObject *)env->class_object, env->class_class);
 	obj_init((struct PupObject *)env->class_class, env->class_class);
-	pup_const_set(env->class_object,
+	pup_class_class_init(env, env->class_object);
+	pup_object_class_init(env, env->class_object);
+
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "Object"),
 	              (struct PupObject *)env->class_object);
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "Class"),
 	              (struct PupObject *)env->class_class);
-	env->class_string = pup_create_class(env, env->class_class,
-	                                        env->class_object,
-	                                        NULL,  // no lexical scope
-	                                        "String");
-	pup_const_set(env->class_object,
+	env->class_string = pup_bootstrap_create_classstring(env);
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "String"),
 	              (struct PupObject *)env->class_string);
-	env->class_exception = pup_create_class(env, env->class_class,
+	env->class_exception = pup_create_class(env,
 	                                        env->class_object,
 	                                        NULL,  // no lexical scope
 	                                        "Exception");
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "Exception"),
 	              (struct PupObject *)env->class_exception);
-	env->class_standarderror = pup_create_class(env, env->class_class,
+	env->class_standarderror = pup_create_class(env,
 	                                            env->class_exception,
 	                                            NULL,  // no lexical scope
 	                                            "StandardError");
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "StandardError"),
 	              (struct PupObject *)env->class_standarderror);
-	env->class_runtimeerror = pup_create_class(env, env->class_class,
+	env->class_runtimeerror = pup_create_class(env,
 	                                           env->class_standarderror,
 	                                           NULL,  // no lexical scope
 	                                           "RuntimeError");
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "RuntimeError"),
 	              (struct PupObject *)env->class_runtimeerror);
-	env->class_true = pup_create_class(env, env->class_class,
+	env->class_true = pup_create_class(env,
 	                                        env->class_object,
 	                                        NULL,  // no lexical scope
 	                                        "TrueClass");
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "TrueClass"),
 	              (struct PupObject *)env->class_true);
-	env->class_false = pup_create_class(env, env->class_class,
+	env->class_false = pup_create_class(env,
 	                                        env->class_object,
 	                                        NULL,  // no lexical scope
 	                                        "FalseClass");
-	pup_const_set(env->class_object,
+	pup_const_set(env, env->class_object,
 	              pup_env_str_to_sym(env, "FalseClass"),
 	              (struct PupObject *)env->class_false);
 	env->object_true = pup_create_object(env, env->class_true);
 	env->object_false = pup_create_object(env, env->class_false);
 
-	pup_class_class_init(env, env->class_object);
-	pup_object_class_init(env, env->class_object);
 	pup_exception_class_init(env, env->class_exception);
 }
 
@@ -175,4 +175,9 @@ struct PupObject *pup_env_get_trueinstance(ENV)
 struct PupObject *pup_env_get_falseinstance(ENV)
 {
 	return env->object_false;
+}
+
+void *pup_alloc(ENV, size_t size)
+{
+	return pup_heap_alloc(&env->heap, size);
 }

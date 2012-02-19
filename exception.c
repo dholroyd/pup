@@ -38,7 +38,7 @@ void pup_exception_message_set(ENV,
                                struct PupObject *value)
 {
 	const int sym_message = pup_env_str_to_sym(env, "@message");
-	pup_iv_set(target, sym_message, value);
+	pup_iv_set(env, target, sym_message, value);
 }
 
 bool pup_instanceof_exception(ENV, struct PupObject *obj)

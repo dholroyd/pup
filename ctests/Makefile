@@ -20,4 +20,4 @@ check_heap_test:	heap_test
 	${check} ./heap_test
 
 env_test:	env_test.c ../env.c ../env.h
-	${CC} -g -Wall -Werror env_test.c ../env.c ../symtable.c ../class.c ../object.c ../exception.c ../raise.c ../string.c ../runtime.c -o env_test
+	${CC} -pthread -g -Wall -Werror env_test.c ../env.c ../symtable.c ../class.c ../object.c ../exception.c ../raise.c ../string.c ../runtime.c ../heap.c -o env_test

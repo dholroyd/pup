@@ -7,11 +7,33 @@
 #include "raise.h"
 #include "exception.h"
 #include "object.h"
+#include "class.h"
 
 struct PupString {
 	struct PupObject obj_header;
 	char *value;
 };
+
+
+static struct PupObject *allocate_instance(ENV, struct PupClass *type)
+{
+	struct PupObject *obj =
+		(struct PupObject *)pup_alloc(env, sizeof(struct PupString));
+	obj_init(obj, type);
+	struct PupString *str = (struct PupString *)obj;
+	str->value = NULL;
+	return obj;
+}
+
+
+struct PupClass *pup_bootstrap_create_classstring(ENV)
+{
+	return pup_internal_create_class(env,
+	                        pup_env_get_classobject(env),
+	                        NULL,  // no lexical scope
+	                        "String",
+	                        &allocate_instance);
+}
 
 struct PupObject *pup_string_new_cstr(ENV, const char *str)
 {

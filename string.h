@@ -1,6 +1,8 @@
 
 #include <stdbool.h>
 
+struct PupClass *pup_bootstrap_create_classstring(ENV);
+
 struct PupObject *pup_string_new_cstr(ENV, const char *str);
 
 /**

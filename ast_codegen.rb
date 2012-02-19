@@ -202,7 +202,7 @@ class ClassDef
                       self_class,
 		      class_name_ref,
                       "class_#{class_name}")
-      ctx.build_call.pup_const_set(self_class, ctx.mk_sym(class_name), bit_cast(classdef, ObjectPtrType))
+      ctx.build_call.pup_const_set(ctx.current_method.env, self_class, ctx.mk_sym(class_name), bit_cast(classdef, ObjectPtrType))
     end
     # self becomes a ref to the class being defined, within the class body,
     ctx.using_self(classdef) do

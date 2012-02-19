@@ -1,4 +1,6 @@
 
+#include <stdlib.h>
+
 struct RuntimeEnv;
 
 #define ENV struct RuntimeEnv *env
@@ -14,3 +16,5 @@ struct PupClass *pup_env_get_classruntimeerror(ENV);
 
 int pup_env_str_to_sym(ENV, char *str);
 const char *pup_env_sym_to_str(ENV, const int sym);
+
+void *pup_alloc(ENV, size_t size);

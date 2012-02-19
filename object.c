@@ -9,6 +9,7 @@
 #include "exception.h"
 #include "string.h"
 #include "abortf.h"
+#include "heap.h"
 
 struct PupAttributeListEntry {
 	long name_sym;
@@ -16,6 +17,14 @@ struct PupAttributeListEntry {
 	struct PupAttributeListEntry *next;
 };
 
+struct PupClass *pup_bootstrap_create_classobject(ENV)
+{
+	struct PupClass *class =
+		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
+	pup_internal_class_init(env, class, NULL, NULL, "Object",
+	                        &pup_object_allocate_instance);
+	return class;
+}
 
 void obj_init(struct PupObject *obj, struct PupClass *type)
 {
@@ -25,16 +34,22 @@ void obj_init(struct PupObject *obj, struct PupClass *type)
 
 METH_IMPL(pup_object_allocate)
 {
-	struct PupObject *obj = (struct PupObject *)malloc(sizeof(struct PupObject));
-	obj_init(obj, (struct PupClass *)target);
+	return pup_class_allocate_instance(env, (struct PupClass *)target);
+}
+
+struct PupObject *pup_object_allocate_instance(ENV, struct PupClass *type)
+{
+	struct PupObject *obj = (struct PupObject *)pup_alloc(env, sizeof(struct PupObject));
+	obj_init(obj, type);
 	return obj;
 }
 
 struct PupObject *pup_create_object(ENV, struct PupClass *type)
 {
+	ABORTF_ON(!type, "'type' must not be null");
 	return pup_object_allocate(env, (struct PupObject *)type, 0, NULL);
 }
-
+/*
 void pup_object_destroy(struct PupObject *obj)
 {
 	struct PupAttributeListEntry *attr = obj->attr_list_head;
@@ -50,6 +65,7 @@ void pup_object_free(struct PupObject *obj)
 	pup_object_destroy(obj);
 	free(obj);
 }
+*/
 
 /*
  * Default implementation for Object#initialize
@@ -85,8 +101,9 @@ static char *sym_name(ENV, const int sym)
 struct PupObject *pup_invoke(ENV, struct PupObject *target, const long name_sym,
                              const long argc, struct PupObject **argv)
 {
-	ABORTF_ON(!target, "no target for invocation of sym:%ld", name_sym);
+	ABORTF_ON(!target, "NULL target invoking `%s'", pup_env_sym_to_str(env, name_sym));
 	struct PupClass *class = target->type;
+	ABORTF_ON(!class, "NULL class invoking `%s' on object %p", pup_env_sym_to_str(env, name_sym), target);
 	PupMethod *method = find_method_in_classes(class, name_sym);
 	if (!method) {
 		char *name = sym_name(env, name_sym);
@@ -124,26 +141,28 @@ static struct PupAttributeListEntry *find_attr(const struct PupObject *obj,
 	return NULL;
 }
 
-static struct PupAttributeListEntry *create_attr(const int sym,
+static struct PupAttributeListEntry *create_attr(ENV, const int sym,
                                               struct PupObject *val,
 					      struct PupAttributeListEntry *next)
 {
 	struct PupAttributeListEntry *attr
-		= malloc(sizeof(struct PupAttributeListEntry));
+		= pup_alloc(env, sizeof(struct PupAttributeListEntry));
 	attr->name_sym = sym;
 	attr->value = val;
 	attr->next = next;
 	return attr;
 }
 
-void pup_iv_set(struct PupObject *obj, const int sym, struct PupObject *val)
+void pup_iv_set(ENV, struct PupObject *obj,
+                const int sym, struct PupObject *val)
 {
 	struct PupAttributeListEntry *attr = find_attr(obj, sym);
 	// TODO: what to do about these race conditions?
 	if (attr) {
 		attr->value = val;
 	} else {
-		obj->attr_list_head= create_attr(sym, val, obj->attr_list_head);
+		obj->attr_list_head =
+			create_attr(env, sym, val, obj->attr_list_head);
 	}
 }
 
