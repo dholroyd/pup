@@ -200,31 +200,6 @@ class CodegenContext
     end
   end
 
-  # helper for building method callsites
-  #
-  #  method_name - a ruby String - this method will convert to a symbol
-  #  args - a ruby array of LLVM::Values - this method will allocate the
-  #         LLVM array and store the args values into it
-  def build_simple_method_invoke(env, receiver, method_name, *args)
-    argc = LLVM::Int32.from_i(args.length)
-    argv = build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{method_name}_argv")
-    args.each_with_index do |arg, i|
-      arg_element = build.gep(argv, [LLVM.Int(i)], "#{method_name}_argv_#{i}")
-      build.store(arg, arg_element)
-    end
-    build_simple_method_invoke_argv(env, receiver, method_name, argv, args.length)
-  end
-
-  # helper for building method callsites
-  # 
-  #  method_name - a ruby String (will convert to a symbol before use)
-  #  argv - an LLVM array of arguments
-  #  argc - ruby fixnum - the number of arguments in the argv array
-  def build_simple_method_invoke_argv(env, receiver, method_name, argv, argc)
-    sym = mk_sym(method_name)
-    build_call.pup_invoke(env, receiver, sym, LLVM.Int(argc), argv, "#{method_name}_ret")
-  end
-
   def build_call
     @call_sugar
   end
