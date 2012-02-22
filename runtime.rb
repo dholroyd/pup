@@ -92,7 +92,10 @@ class RuntimeBuilder
 	ObjectPtrType],
       ["pup_env_str_to_sym",
 	[EnvPtrType, CStrType],
-	LLVM::Int]
+	LLVM::Int],
+      ["pup_fixnum_create",
+	[EnvPtrType, LLVM::Int],
+	ObjectPtrType]
     ].each do |args|
       @ctx.module.functions.add(*args)
     end

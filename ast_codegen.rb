@@ -111,45 +111,34 @@ class VarOrInvokeExpr
 
   def codegen_invoke(ctx)
     # TODO: varargs
-    # TODO: duplication vs. ctx.build_simple_invoke()
     r = @receiver ? @receiver.codegen(ctx) : ctx.self_ref
 
-    argc = LLVM::Int32.from_i(arg_count)
-    if @args
-      argv = ctx.build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{@name.name}_argv")
-      @args.each_with_index do |arg, i|
-	a = arg.codegen(ctx)
-	arg_element = ctx.build.gep(argv, [LLVM.Int(i)], "#{@name.name}_argv_#{i}")
-	ctx.build.store(a, arg_element)
-      end
-    else
-      argv = ::Pup::Core::Types::ObjectPtrType.pointer.null
-    end
-    sym = ctx.mk_sym(name.name)
-    if ctx.eh_active?
-      # block following invocation; continue here if no exception raised
-      bkcontinue = ctx.current_method.function.basic_blocks.append("invoke_#{@name.name}_continue")
-      res = ctx.build.invoke(ctx.module.functions["pup_invoke"],
-                       [ctx.current_method.env, r, sym, LLVM::Int(arg_count), argv],
-                       bkcontinue, ctx.landingpad,
-		       "#{@name.name}_ret")
-      ctx.build.position_at_end(bkcontinue)
-      res
-    else
-      ctx.build_call.pup_invoke(ctx.current_method.env,
-                     r, sym, LLVM::Int(arg_count), argv,
-		     "#{@name.name}_ret")
-    end
-  end
-
-  def arg_count
-    @args ? @args.length : 0
+    arg_list = @args ? @args.map {|a| a.codegen(ctx) } : []
+    ctx.build_method_invocation(r, name.name, *arg_list)
   end
 end
 
 class SelfExpr
   def codegen(ctx)
     ctx.self_ref
+  end
+end
+
+class AbstractBinaryExpr
+  def codegen(ctx)
+    codegen_binary(ctx, left.codegen(ctx), right.codegen(ctx))
+  end
+end
+
+class EqualityExpr
+  def codegen_binary(ctx, lhs, rhs)
+    ctx.build_method_invocation(lhs, "==", rhs)
+  end
+end
+
+class AddExpr
+  def codegen_binary(ctx, lhs, rhs)
+    ctx.build_method_invocation(lhs, "+", rhs)
   end
 end
 
@@ -171,8 +160,10 @@ class StringLiteral
   end
 end
 
-class IntLitaeral
-  # TODO
+class IntLiteral
+  def codegen(ctx)
+    ctx.build_call.pup_fixnum_create(ctx.current_method.env, LLVM.Int(@source.to_i))
+  end
 end
 
 class BoolLiteral

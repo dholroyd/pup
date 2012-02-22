@@ -3,7 +3,7 @@ clang=clang
 llvmc=llvmc-2.9
 tt=/var/lib/gems/1.8/gems/treetop-1.4.10/bin/tt
 
-runit:	parser.rb runtime.o exception.o raise.o string.o class.o object.o symtable.o env.o heap.o
+runit:	parser.rb runtime.o exception.o raise.o string.o class.o object.o symtable.o env.o heap.o fixnum.o
 	ruby -I tests tests/testsuite.rb
 
 
@@ -31,11 +31,14 @@ object.o:	object.c object.h class.h runtime.h exception.h string.h abortf.h env.
 symtable.o:	symtable.c
 	${clang} -O0 -Wall -Werror -g -c -fexceptions symtable.c -o symtable.o
 
-env.o:	env.c symtable.h object.h class.h
+env.o:	env.c symtable.h object.h class.h string.h exception.h heap.h fixnum.h
 	${clang} -O0 -Wall -Werror -g -c -fexceptions env.c -o env.o
 
 heap.o:	heap.c heap.h abortf.h
 	${clang} -O0 -Wall -Werror -g -c -fexceptions heap.c -o heap.o
+
+fixnum.o:	fixnum.c env.h object.h exception.h class.h
+	${clang} -O0 -Wall -Werror -g -c -fexceptions fixnum.c -o fixnum.o
 
 parser.rb:	parser.treetop
 	${tt} parser.treetop

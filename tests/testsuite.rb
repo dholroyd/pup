@@ -5,6 +5,9 @@ include RSpec::Matchers
 
 # in invocation test.if_true runs the code in "if_true.pup" etc.
 
+test.integer do
+  stdout.should match /success/
+end
 test.if_true do
   stdout.should match /success/
 end

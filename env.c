@@ -7,6 +7,7 @@
 #include "string.h"
 #include "exception.h"
 #include "heap.h"
+#include "fixnum.h"
 
 struct RuntimeEnv {
 	struct PupHeap heap;
@@ -21,6 +22,7 @@ struct RuntimeEnv {
 	struct PupClass *class_false;
 	struct PupObject *object_true;
 	struct PupObject *object_false;
+	struct PupClass *class_fixnum;
 };
 
 
@@ -105,6 +107,10 @@ static void runtime_init(struct RuntimeEnv *env)
 	env->object_false = pup_create_object(env, env->class_false);
 
 	pup_exception_class_init(env, env->class_exception);
+	env->class_fixnum = pup_bootstrap_create_classfixnum(env);
+	pup_const_set(env, env->class_object,
+	              pup_env_str_to_sym(env, "Fixnum"),
+	              (struct PupObject *)env->class_fixnum);
 }
 
 struct RuntimeEnv *pup_runtime_env_create()
@@ -175,6 +181,11 @@ struct PupObject *pup_env_get_trueinstance(ENV)
 struct PupObject *pup_env_get_falseinstance(ENV)
 {
 	return env->object_false;
+}
+
+struct PupClass *pup_env_get_classfixnum(ENV)
+{
+	return env->class_fixnum;
 }
 
 void *pup_alloc_obj(ENV, size_t size)

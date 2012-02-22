@@ -13,6 +13,9 @@ struct PupClass *pup_env_get_classclass(ENV);
 struct PupClass *pup_env_get_classstring(ENV);
 struct PupClass *pup_env_get_classexception(ENV);
 struct PupClass *pup_env_get_classruntimeerror(ENV);
+struct PupObject *pup_env_get_trueinstance(ENV);
+struct PupObject *pup_env_get_falseinstance(ENV);
+struct PupClass *pup_env_get_classfixnum(ENV);
 
 int pup_env_str_to_sym(ENV, char *str);
 const char *pup_env_sym_to_str(ENV, const int sym);

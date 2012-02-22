@@ -200,6 +200,35 @@ class CodegenContext
     end
   end
 
+  def build_method_invocation(receiver, name, *args)
+    arg_count = args.length
+    argc = LLVM::Int32.from_i(arg_count)
+    if args.empty?
+      argv = ::Pup::Core::Types::ObjectPtrType.pointer.null
+    else
+      argv = build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{name}_argv")
+      args.each_with_index do |arg, i|
+	arg_element = build.gep(argv, [LLVM.Int(i)], "#{name}_argv_#{i}")
+	build.store(arg, arg_element)
+      end
+    end
+    sym = mk_sym(name)
+    if eh_active?
+      # block following invocation; continue here if no exception raised
+      bkcontinue = current_method.function.basic_blocks.append("invoke_#{name}_continue")
+      res = build.invoke(@module.functions["pup_invoke"],
+                       [current_method.env, receiver, sym, LLVM::Int(arg_count), argv],
+                       bkcontinue, landingpad,
+		       "#{name}_ret")
+      build.position_at_end(bkcontinue)
+      res
+    else
+      build_call.pup_invoke(current_method.env,
+                     receiver, sym, LLVM::Int(arg_count), argv,
+		     "#{name}_ret")
+    end
+  end
+
   def build_call
     @call_sugar
   end

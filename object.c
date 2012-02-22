@@ -241,6 +241,14 @@ METH_IMPL(pup_puts)
 	return NULL;
 }
 
+METH_IMPL(pup_object_op_equals)
+{
+	pup_arity_check(env, 1, argc);
+	struct PupObject *rhs = argv[0];
+	return target == rhs  ? pup_env_get_trueinstance(env)
+	                      : pup_env_get_falseinstance(env);
+}
+
 void pup_object_class_init(ENV, struct PupClass *class_obj)
 {
 	pup_define_method(class_obj,
@@ -252,4 +260,7 @@ void pup_object_class_init(ENV, struct PupClass *class_obj)
 	pup_define_method(class_obj,
 	                  pup_env_str_to_sym(env, "puts"),
 	                  pup_puts);
+	pup_define_method(class_obj,
+	                  pup_env_str_to_sym(env, "=="),
+	                  pup_object_op_equals);
 }
