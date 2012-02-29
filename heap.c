@@ -29,10 +29,10 @@ struct HeapObject {
 static struct PupHeapRegion *allocate_region()
 {
 	struct PupHeapRegion *region = malloc(sizeof(struct PupHeapRegion));
-	region->next = NULL;
 	if (!region) {
 		return NULL;
 	}
+	region->next = NULL;
 	// TODO: assert REGION_SIZE is a multiple of page-size
 	region->region = mmap(NULL,
 	                    REGION_SIZE,
