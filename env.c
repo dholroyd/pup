@@ -8,6 +8,8 @@
 #include "exception.h"
 #include "heap.h"
 #include "fixnum.h"
+#include "abortf.h"
+#include "stdio.h"
 
 struct RuntimeEnv {
 	struct PupHeap heap;
@@ -49,7 +51,9 @@ void pup_runtime_env_destroy(struct RuntimeEnv *env)
 
 static void runtime_init(struct RuntimeEnv *env)
 {
-	pup_heap_init(&env->heap);
+	if (pup_heap_init(&env->heap)) {
+		ABORTF("heap initialization failed");
+	}
 	env->class_object = pup_bootstrap_create_classobject(env);
 	env->class_class = pup_bootstrap_create_classclass(env,
 	                                                   env->class_object);  // super=Object
