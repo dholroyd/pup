@@ -68,6 +68,15 @@ class BeginStmt < AST
   end
 end
 
+class WhileStmt < AST
+  attr_reader :cond, :statements
+
+  def initialize(cond, statements)
+    @cond = cond
+    @statements = statements
+  end
+end
+
 class RescueBlock
   attr_reader :types, :var_name, :statements
 
@@ -117,6 +126,7 @@ class LogicExpr < AbstractBinaryExpr; end
 class EqualityExpr < AbstractBinaryExpr; end
 class BitwiseExpr < AbstractBinaryExpr; end
 class AssignExpr < AbstractBinaryExpr; end
+class RelationalExpr < AbstractBinaryExpr; end
 
 class LogicNotExpr < AST
   attr_reader :subexpr

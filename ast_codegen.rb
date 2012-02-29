@@ -64,6 +64,32 @@ class IfStmt
   end
 end
 
+class WhileStmt
+  def codegen(ctx)
+    # alloacte a place to store the 'value' of the if-stmt,
+    result = ctx.current_method.entry_block_builder.alloca(::Pup::Core::Types::ObjectPtrType, "while_tmp_value")
+    # TODO: write nil to while_tmp_value
+
+    bkcond = ctx.current_method.function.basic_blocks.append("while_cond")
+    ctx.build.br(bkcond)
+    bkbody = ctx.current_method.function.basic_blocks.append("while_body")
+    bkcontinue = ctx.current_method.function.basic_blocks.append("while_continue")
+
+    ctx.with_builder_at_end(bkcond) do |b|
+      val = cond.codegen(ctx)
+      cmp = b.icmp(:eq, val, ctx.build_call.pup_env_get_falseinstance(ctx.current_method.env), "is_false")
+      b.cond(cmp, bkcontinue, bkbody)
+    end
+    ctx.with_builder_at_end(bkbody) do |b|
+      v = statements.codegen(ctx)
+      b.store(v, result)
+      b.br(bkcond)
+    end
+    ctx.build.position_at_end(bkcontinue)
+    ctx.build.load(result, "if_result")
+  end
+end
+
 class AssignExpr
   def codegen(ctx)
     case left
@@ -133,6 +159,12 @@ end
 class EqualityExpr
   def codegen_binary(ctx, lhs, rhs)
     ctx.build_method_invocation(lhs, "==", rhs)
+  end
+end
+
+class RelationalExpr
+  def codegen_binary(ctx, lhs, rhs)
+    ctx.build_method_invocation(lhs, op.to_s, rhs)
   end
 end
 

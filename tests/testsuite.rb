@@ -5,6 +5,9 @@ include RSpec::Matchers
 
 # in invocation test.if_true runs the code in "if_true.pup" etc.
 
+test.while do
+  stdout.should match /^\s*success\s+success\s+success\s*$/
+end
 test.integer do
   stdout.should match /success/
 end

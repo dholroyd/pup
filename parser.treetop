@@ -31,6 +31,7 @@ grammar Pup
     / classdef
     / methoddef
     / begin
+    / while
     / expression
   end
 
@@ -124,6 +125,16 @@ grammar Pup
     }
   end
 
+  rule while
+    'while' white_noeol expression (white_noeol 'do')? space_eol
+      white_noeol? statements space
+    'end' {
+      def value
+        WhileStmt.new(expression.value, statements.value)
+      end
+    }
+  end
+
   rule expression
     assignment
   end
@@ -197,16 +208,29 @@ grammar Pup
   end
 
   rule equality
-    left:additive white_noeol? equality_op space? right:equality {
+    left:relational white_noeol? equality_op space? right:equality {
       def value
 	EqualityExpr.new(left.value, equality_op.text_value.to_sym, right.value)
+      end
+    }
+    / relational
+  end
+
+  rule equality_op
+    '==' / '!='
+  end
+
+  rule relational
+    left:additive white_noeol? relational_op space? right:relational {
+      def value
+	RelationalExpr.new(left.value, relational_op.text_value.to_sym, right.value)
       end
     }
     / additive
   end
 
-  rule equality_op
-    '==' / '!='
+  rule relational_op
+    '<' / '<=' / '>' / '>='
   end
 
   rule additive

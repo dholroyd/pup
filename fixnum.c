@@ -63,6 +63,20 @@ METH_IMPL(pup_fixnum_op_equals)
 
 }
 
+METH_IMPL(pup_fixnum_op_lessthan)
+{
+	pup_arity_check(env, 1, argc);
+	struct PupObject *rhs = argv[0];
+	if (target->type != rhs->type) {
+		return pup_env_get_falseinstance(env);
+	}
+	struct PupFixnum *left = (struct PupFixnum *)target;
+	struct PupFixnum *right = (struct PupFixnum *)rhs;
+	return left->value < right->value  ? pup_env_get_trueinstance(env)
+	                                    : pup_env_get_falseinstance(env);
+
+}
+
 struct PupClass *pup_bootstrap_create_classfixnum(ENV)
 {
 	struct PupClass *class_fix = pup_internal_create_class(env,
@@ -77,6 +91,9 @@ struct PupClass *pup_bootstrap_create_classfixnum(ENV)
 	pup_define_method(class_fix,
 	                  pup_env_str_to_sym(env, "=="),
 	                  pup_fixnum_op_equals);
+	pup_define_method(class_fix,
+	                  pup_env_str_to_sym(env, "<"),
+	                  pup_fixnum_op_lessthan);
 	return class_fix;
 }
 
