@@ -79,12 +79,14 @@ static void free_region(struct PupHeapRegion *region)
 
 static struct PupHeapRegion *get_local_region(struct PupHeap *heap)
 {
-	return (struct PupHeapRegion *)
-		pthread_getspecific(heap->threadlocal_region);
+	void *res = pthread_getspecific(heap->threadlocal_region);
+	ABORT_ON(!res, "pthread_getspecific() produced null");
+	return (struct PupHeapRegion *)res;
 }
 
 static int set_local_region(struct PupHeap *heap, struct PupHeapRegion *region)
 {
+	ABORT_ON(!region, "set_local_region() given null region");
 	return pthread_setspecific(heap->threadlocal_region, region);
 }
 
