@@ -206,7 +206,7 @@ class CodegenContext
     if args.empty?
       argv = ::Pup::Core::Types::ObjectPtrType.pointer.null
     else
-      argv = build.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{name}_argv")
+      argv = current_method.entry_block_builder.array_alloca(::Pup::Core::Types::ObjectPtrType, argc, "#{name}_argv")
       args.each_with_index do |arg, i|
 	arg_element = build.gep(argv, [LLVM.Int(i)], "#{name}_argv_#{i}")
 	build.store(arg, arg_element)
