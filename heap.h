@@ -5,6 +5,7 @@ struct PupHeapRegion;
 struct PupHeap {
 	pthread_key_t threadlocal_region;
 	struct PupHeapRegion *region_list;
+	pthread_t gc_thread;
 };
 
 int pup_heap_init(struct PupHeap *heap);

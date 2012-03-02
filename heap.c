@@ -103,6 +103,66 @@ int pup_heap_thread_init(struct PupHeap *heap)
 	return 0;
 }
 
+static void perform_gc(struct PupHeap *heap)
+{
+	fprintf(stderr, "perform_gc()\n");
+}
+
+static void *gc_thread(void *arg)
+{
+	struct PupHeap *heap = (struct PupHeap *)arg;
+	struct timespec req = {
+		.tv_sec = 0,
+		.tv_nsec = 500000000
+	};
+	while (1) {
+		int res = nanosleep(&req, NULL);
+		ABORTF_ON(res==EINVAL, "nanosleep() reports invalid timespec");
+		ABORTF_ON(res==EFAULT, "nanosleep() reports EFAULT");
+		perform_gc(heap);
+	}
+	return NULL;
+}
+
+static int heap_thread_stop(struct PupHeap *heap)
+{
+	int res = pthread_cancel(heap->gc_thread);
+	if (res) {
+		return res;
+	}
+	
+	res = pthread_join(heap->gc_thread, NULL);
+	return res;
+}
+
+static int heap_thread_start(struct PupHeap *heap)
+{
+	pthread_attr_t attr;
+	if (pthread_attr_init(&attr)) {
+		return 1;
+	}
+	int res = pthread_create(&heap->gc_thread,
+	                         &attr,
+	                         gc_thread,
+	                         (void *)heap);
+	if (pthread_attr_destroy(&attr)) {
+		heap_thread_stop(heap);
+		return 1;
+	}
+	if (res) {
+		return 1;
+	}
+	return 0;
+}
+
+static void pup_heap_thread_destroy(struct PupHeap *heap)
+{
+	struct PupHeapRegion *local_region = get_local_region(heap);
+	if (local_region) {
+		free_region(local_region);
+	}
+}
+
 int pup_heap_init(struct PupHeap *heap)
 {
 	int res;
@@ -115,6 +175,12 @@ int pup_heap_init(struct PupHeap *heap)
 	res = pup_heap_thread_init(heap);
 	if (res) {
 		// ignore return value, since we're cleaning up anyway,
+		pthread_key_delete(heap->threadlocal_region);
+		return res;
+	}
+	res = heap_thread_start(heap);
+	if (res) {
+		pup_heap_thread_destroy(heap);
 		pthread_key_delete(heap->threadlocal_region);
 		return res;
 	}
@@ -131,16 +197,9 @@ static void destroy_global_heap(struct PupHeap *heap)
 	}
 }
 
-void pup_heap_thread_destroy(struct PupHeap *heap)
-{
-	struct PupHeapRegion *local_region = get_local_region(heap);
-	if (local_region) {
-		free_region(local_region);
-	}
-}
-
 void pup_heap_destroy(struct PupHeap *heap)
 {
+	heap_thread_stop(heap);
 	destroy_global_heap(heap);
 	pup_heap_thread_destroy(heap);
 	if (pthread_key_delete(heap->threadlocal_region)) {
