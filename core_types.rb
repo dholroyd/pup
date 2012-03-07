@@ -11,8 +11,8 @@ CStrType = LLVM.Pointer(LLVM::Int8)
 
 SymbolType = LLVM::Int
 
-obj_ty = LLVM::Type.opaque  # forward declaration, refined later
-ObjectPtrType = LLVM::Type.pointer(obj_ty)
+ObjectType = LLVM::Struct("PupObject")
+ObjectPtrType = ObjectType.pointer
 
 ArgsType = ObjectPtrType.pointer
 
@@ -22,37 +22,34 @@ EnvPtrType = EnvType.pointer
 MethodType = LLVM.Function([EnvPtrType, ObjectPtrType, LLVM::Int, ArgsType], ObjectPtrType)
 
 MethodPtrType = MethodType.pointer
-MethodListEntryType = LLVM::Type.rec do |thistype|
-  LLVM.Struct(
-    SymbolType,  # method name
-    MethodPtrType, # method impl
-    thistype.pointer  # next list entry
-  )
-end
+MethodListEntryType = LLVM::Struct("MethodListEntry")
+MethodListEntryType.element_types = [
+  SymbolType,  # method name
+  MethodPtrType, # method impl
+  MethodListEntryType.pointer  # next list entry
+]
 MethodListEntryPtrType = MethodListEntryType.pointer
 
-AttributeListEntryType = LLVM::Type.rec do |thistype|
-  LLVM.Struct(
-    SymbolType,  # attribute name
-    ObjectPtrType, # attribute value
-    thistype.pointer  # next list entry
-  )
-end
+AttributeListEntryType = LLVM::Struct("AttributeListEntry")
+AttributeListEntryType.element_types = [
+  SymbolType,  # attribute name
+  ObjectPtrType, # attribute value
+  AttributeListEntryType.pointer  # next list entry
+]
 
-ClassType = LLVM::Type.rec do |thistype|
-  LLVM.Struct(
-    obj_ty,  # Since the 'Class' class is a kind of Object
-    thistype.pointer,  # superclass
-    CStrType,     # class name
-    MethodListEntryType.pointer,  # head of the method linked list
-    thistype.pointer   # the lexical scope of the class definition
-  )
-end
+ClassType = LLVM::Struct("PupClass")
+ClassType.element_types = [
+  ObjectType,  # Since the 'Class' class is a kind of Object
+  ClassType.pointer,  # superclass
+  CStrType,     # class name
+  MethodListEntryType.pointer,  # head of the method linked list
+  ClassType.pointer   # the lexical scope of the class definition
+]
 
-ObjectType = LLVM.Struct(
+ObjectType.element_types = [
   ClassType.pointer,   # the class of this object
   AttributeListEntryType.pointer  # head of the method linked list
-)
+]
 
 # Instances require that their ClassType be pointed at the "Integer"
 # ClassType instance created elsewhere
@@ -66,7 +63,6 @@ StringObjectType = LLVM.Struct(
   CStrType
 )
 
-obj_ty.refine(ObjectType)
 
 end
 end

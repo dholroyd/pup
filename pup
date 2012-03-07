@@ -5,6 +5,6 @@ scriptdir=`dirname $0`
 #chk="valgrind --leak-check=no --read-var-info=yes"
 #chk="gdb --args"
 
-#export LD_LIBRARY_PATH=/home/dave/projects/pre-pup/llvm-2.7/Release+Debug/lib
+export LD_LIBRARY_PATH=/home/dave/opt/llvm-3.0/lib
 
 $chk ruby -w -I /var/lib/gems/1.8/gems/treetop-1.4.10/lib/ -I /var/lib/gems/1.8/gems/polyglot-0.3.1/lib/ -I ${HOME}/projects/ruby-llvm/lib/ -I ${scriptdir} ${scriptdir}/pup.rb $*

@@ -20,7 +20,7 @@ class CodegenContext
   end
 
   def initialize
-    @module = LLVM::Module.create("Pup")
+    @module = LLVM::Module.new("Pup")
     @build = nil
     @self_ref = nil
     @current_method = nil
@@ -64,7 +64,7 @@ class CodegenContext
 
   def with_builder_at_end(block=@block)
     last_builder = @build
-    @build = LLVM::Builder.create
+    @build = LLVM::Builder.new
     @build.position_at_end(block)
     begin
       yield @build
@@ -141,7 +141,7 @@ class CodegenContext
 
     def entry_block_builder
       return @entry_block_builder if @entry_block_builder
-      build = LLVM::Builder.create
+      build = LLVM::Builder.new
       blocks = function.basic_blocks
       blocks.append("entry") if blocks.size == 0
       entry = blocks.entry
@@ -190,7 +190,7 @@ class CodegenContext
 	sel = b.call(@module.functions["llvm.eh.selector"],
 	             excep,
 	             @module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-	             build_call.pup_env_get_classexception(current_method.env), "sel")
+	             eh_catchall, "sel")
 	build_call.pup_handle_uncaught_exception(current_method.env, excep)
 	b.br(exit_block)
       end
@@ -255,6 +255,16 @@ class CodegenContext
 
   def eh_active?
     !@landingpad.nil?
+  end
+
+  # provides a reference to the global variable that must be provided as
+  # a parameter to the landingpad 'catch'-clause
+  def eh_catchall
+    catchall = @module.globals["eh_catchall"]
+    unless catchall
+      catchall = global_constant(LLVM::Int, LLVM.Int(0), "eh_catchall")
+    end
+    catchall
   end
 
   # Makes an LLVM Int from name.to_sym.to_i

@@ -103,14 +103,6 @@ class RuntimeBuilder
 
   def init_types
     object_name_ptr = @ctx.global_string_constant("Object")
-
-    @ctx.module.types.add("Object", ObjectType)
-    @ctx.module.types.add("RuntimeEnv", EnvType)
-    @ctx.module.types.add("Class", ClassType)
-    @ctx.module.types.add("String", StringObjectType)
-    @ctx.module.types.add("Method", MethodType)
-    @ctx.module.types.add("AttributeListEntry", AttributeListEntryType)
-    @ctx.module.types.add("MethodListEntry", MethodListEntryType)
   end
 
   private

@@ -2,7 +2,6 @@ require 'parser_driver'
 require 'core_types'
 require 'ast_codegen'
 require 'pp'
-require 'llvm/bitcode'
 
 name = ARGV[0]
 outname = name.sub(/\.pup/, "") + ".bc"

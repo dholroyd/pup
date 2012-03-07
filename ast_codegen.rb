@@ -309,7 +309,7 @@ class BeginStmt
       sel = b.call(ctx.module.functions["llvm.eh.selector"],
 		   dwarf_ex,
 		   ctx.module.functions["pup_eh_personality"].bit_cast(LLVM::Int8.type.pointer),
-                   ctx.build_call.pup_env_get_classexception(ctx.current_method.env), "sel")
+                   ctx.eh_catchall, "sel")
       excep = ctx.build_call.extract_exception_obj(dwarf_ex, "excep")
       excep_type = ctx.build.load(ctx.build.struct_gep(excep, 0), "excep_type")
       excep_type_asobj = ctx.build.bit_cast(excep_type, ::Pup::Core::Types::ObjectPtrType, "excep_type_asobj")
