@@ -32,7 +32,6 @@ class CodegenContext
     @call_sugar = CallSugar.new(self)
     @global_sugar = GlobalSugar.new(self)
     @runtime_builder = ::Pup::Runtime::RuntimeBuilder.new(self)
-    @runtime_builder.init_types
     env = EnvPtrType.null
     @current_method = Struct.new("FakeMethod", :env).new(env)
     @runtime_builder.build_runtime_init

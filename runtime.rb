@@ -101,10 +101,6 @@ class RuntimeBuilder
     end
   end
 
-  def init_types
-    object_name_ptr = @ctx.global_string_constant("Object")
-  end
-
   private
 
   def declare_meth_impl_func(name)
