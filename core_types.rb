@@ -16,7 +16,7 @@ ObjectPtrType = ObjectType.pointer
 
 ArgsType = ObjectPtrType.pointer
 
-EnvType = LLVM.Struct()
+EnvType = LLVM.Struct("PupEnv")
 EnvPtrType = EnvType.pointer
 
 MethodType = LLVM.Function([EnvPtrType, ObjectPtrType, LLVM::Int, ArgsType], ObjectPtrType)
