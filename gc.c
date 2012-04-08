@@ -81,7 +81,10 @@ static const struct PupGCSafepoint *find_safepoint(
 static unw_word_t get_frame_pointer(unw_cursor_t *cursor)
 {
 	unw_word_t sp;
-	unw_get_reg(cursor, UNW_X86_64_RSP, &sp);
+	int res = unw_get_reg(cursor, UNW_X86_64_RSP, &sp);
+	if (res) {
+		return 0;
+	}
 	return sp;
 }
 
@@ -89,6 +92,9 @@ static void collect_stack_root_pointers(unw_cursor_t *cursor,
                                         const struct PupGCSafepoint *safepoint)
 {
 	unw_word_t fp = get_frame_pointer(cursor);
+	if (!fp) {
+		return;
+	}
 	fprintf(stderr, "frame pointer %p\n", (void *)fp);
 	for (int i=0; i<safepoint->live_count; i++) {
 		int fp_offset = safepoint->live_offsets[i];
