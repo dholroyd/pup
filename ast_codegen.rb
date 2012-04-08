@@ -83,6 +83,7 @@ class WhileStmt
     ctx.with_builder_at_end(bkbody) do |b|
       v = statements.codegen(ctx)
       b.store(v, result)
+      ctx.build_call.pup_env_safepoint(ctx.current_method.env)
       b.br(bkcond)
     end
     ctx.build.position_at_end(bkcontinue)

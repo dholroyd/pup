@@ -30,6 +30,9 @@ class RuntimeBuilder
       ["pup_eh_personality",
 	[],
 	LLVM.Void],
+      ["llvm.gcroot",
+	[LLVM::Int8.type.pointer.pointer, LLVM::Int8.type.pointer],
+	LLVM.Void],
       ["pup_runtime_env_create",
 	[],
 	EnvPtrType],
@@ -95,7 +98,13 @@ class RuntimeBuilder
 	LLVM::Int],
       ["pup_fixnum_create",
 	[EnvPtrType, LLVM::Int],
-	ObjectPtrType]
+	ObjectPtrType],
+      ["pup_env_launch_main",
+	[EnvPtrType, MethodPtrType],
+	LLVM::Int],
+      ["pup_env_safepoint",
+	[EnvPtrType],
+	LLVM.Void]
     ].each do |args|
       @ctx.module.functions.add(*args)
     end

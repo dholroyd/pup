@@ -114,9 +114,10 @@ class CodegenContext
       target.name = "target"
       argc.name = "argc"
       argv.name = "argv"
+      fn.gc = "pupgc"
       last_method = @current_method
       begin
-	@current_method = MethodRef.new(fn, env, target, argc, argv)
+	@current_method = MethodRef.new(@module, fn, env, target, argc, argv)
 	using_self(target) do
 	  yield @current_method
         end
@@ -128,7 +129,8 @@ class CodegenContext
 
   class MethodRef
     attr_reader :function, :env, :param_target, :param_argc, :param_argv
-    def initialize(function, env, param_target, param_argc, param_argv)
+    def initialize(mod, function, env, param_target, param_argc, param_argv)
+      @module = mod
       @entry_block_builder = nil
       @function = function
       @env = env
@@ -152,6 +154,8 @@ class CodegenContext
       local = get_local(name)
       unless local
 	local = entry_block_builder.alloca(::Pup::Core::Types::ObjectPtrType, "local_#{name}")
+	cast = entry_block_builder.bit_cast(local, LLVM::Int8.type.pointer.pointer)
+	entry_block_builder.call(@module.functions["llvm.gcroot"], cast, LLVM::Int8.type.pointer.null)
 	@locals[name] = local
       end
       local
@@ -177,12 +181,10 @@ class CodegenContext
       exit_block = mainfn.basic_blocks.append("exit")
       with_builder_at_end(entry) do |b|
         env = build_call.pup_runtime_env_create()
-	main_class = build_call.pup_env_get_classobject(env)
-	main_obj = build_call.pup_create_object(env, main_class)
 
 	@current_method = Struct::FakeMethod.new(env)
 
-	ret_val = build.invoke(@module.functions["pup_main"], [env, main_obj, LLVM.Int(0), ArgsType.null], exit_block, catch_block)
+	ret_val = build.invoke(@module.functions["pup_env_launch_main"], [env, @module.functions["pup_main"]], exit_block, catch_block)
       end
       with_builder_at_end(catch_block) do |b|
 	excep = b.call(@module.functions["llvm.eh.exception"], "excep")

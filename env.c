@@ -201,3 +201,53 @@ void *pup_alloc_attr(ENV, size_t size)
 {
 	return pup_heap_alloc(&env->heap, size, PUP_KIND_ATTR);
 }
+
+struct MainArgs {
+	struct RuntimeEnv *env;
+	struct PupObject *main_obj;
+	PupMethod *main_method;
+};
+
+static void *do_main(void *arg)
+{
+	struct MainArgs *args = (struct MainArgs *)arg;
+	pup_heap_thread_init(&args->env->heap);
+	struct PupObject *ret =
+		(*args->main_method)(args->env, args->main_obj, 0, NULL);
+	// TODO: pup_heap_thread_destroy(), or something named better
+	return ret;
+}
+
+int pup_env_launch_main(ENV, PupMethod *main_method)
+{
+	struct PupClass *class_class = pup_env_get_classobject(env);
+	struct PupObject *main_obj = pup_create_object(env, class_class);
+
+	pthread_attr_t attr;
+	if (pthread_attr_init(&attr)) {
+		return 1;
+	}
+
+	struct MainArgs args = {
+		.env = env,
+		.main_obj = main_obj,
+		.main_method = main_method
+	};
+	pthread_t main_thread;
+	int res = pthread_create(&main_thread,
+	                         &attr,
+	                         do_main,
+	                         (void *)&args);
+	// FIXME: proper error handling
+	ABORTF_ON(res, "pthread_create() returned %d", res);
+	void *retval;
+	res = pthread_join(main_thread, &retval);
+	// FIXME: proper error handling
+	ABORTF_ON(res, "pthread_join() returned %d", res);
+	return 0;
+}
+
+void pup_env_safepoint(ENV)
+{
+	pup_heap_safepoint(&env->heap);
+}
