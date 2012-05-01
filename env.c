@@ -202,6 +202,17 @@ void *pup_alloc_attr(ENV, size_t size)
 	return pup_heap_alloc(&env->heap, size, PUP_KIND_ATTR);
 }
 
+void *pup_env_alloc_obj_for_gc_copy(ENV, size_t size)
+{
+	return pup_heap_alloc_for_gc_copy(&env->heap, size, PUP_KIND_OBJ);
+}
+
+void *pup_env_alloc_attr_for_gc_copy(ENV, size_t size)
+{
+	return pup_heap_alloc_for_gc_copy(&env->heap, size, PUP_KIND_ATTR);
+}
+
+
 struct MainArgs {
 	struct RuntimeEnv *env;
 	struct PupObject *main_obj;

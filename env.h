@@ -22,3 +22,5 @@ const char *pup_env_sym_to_str(ENV, const int sym);
 
 void *pup_alloc_obj(ENV, size_t size);
 void *pup_alloc_attr(ENV, size_t size);
+void *pup_env_alloc_obj_for_gc_copy(ENV, size_t size);
+void *pup_env_alloc_attr_for_gc_copy(ENV, size_t size);

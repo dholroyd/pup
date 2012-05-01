@@ -21,7 +21,8 @@ void pup_internal_class_init(ENV,
                              struct PupClass *scope,
                              const char *name,
                              struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
-                             void (*destroy_instance)(struct PupObject *));
+                             void (*destroy_instance)(struct PupObject *),
+                             struct PupObject *(*gc_copy_instance)(ENV, const struct PupObject *));
 
 struct PupClass *pup_internal_create_class(ENV,
                                   struct PupClass *superclass,

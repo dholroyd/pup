@@ -2,10 +2,27 @@
 #include <stdio.h>
 #include <libunwind.h>
 #include <dlfcn.h>
+#include <atomic_ops.h>
+#include <valgrind/drd.h>
 #include "abortf.h"
+#include "heap.h"
+#include "gc/refqueue.h"
+#include "object.h"
 
 struct PupGCState {
+	// the return value of dlopen(NULL, RTLD_LAZY),
 	void *dlhandle;
+	// actually a 'struct PupRefQueueSegment *' (TODO: atomic access actually needed?)
+	volatile AO_t reference_queue_head;
+	// current bit-value used to mark live objects,
+	volatile AO_t live_mark_value;
+	// counters marking the progress of a collection,
+	int garbage_count;
+	int live_count;
+	// region we are currently copying live objects into,
+	struct PupHeapRegion *copy_target;
+	// the segment we are 
+	struct PupRefQueueSegment *current_segment;
 };
 
 struct PupGCSafepoint {
@@ -19,7 +36,6 @@ struct PupGCMap {
 	int32_t point_count;
 	struct PupGCSafepoint points[0];
 };
-
 
 static const struct PupGCMap *get_stack_frame_roots(struct PupGCState *state,
                                   unw_cursor_t *cursor)
@@ -88,18 +104,91 @@ static unw_word_t get_frame_pointer(unw_cursor_t *cursor)
 	return sp;
 }
 
-static void collect_stack_root_pointers(unw_cursor_t *cursor,
+static struct PupRefQueueSegment *get_ref_queue_head(struct PupGCState *state)
+{
+	return (struct PupRefQueueSegment *)AO_load(&state->reference_queue_head);
+}
+
+static void set_ref_queue_head(struct PupGCState *state,
+                               struct PupRefQueueSegment *seg)
+{
+	AO_store(&state->reference_queue_head, (AO_t)seg);
+}
+
+static int compare_and_swap_ref_queue_head(struct PupGCState *state,
+                                           struct PupRefQueueSegment *old_head,
+                                           struct PupRefQueueSegment *new_head)
+{
+	return AO_compare_and_swap(&state->reference_queue_head,
+	                           (AO_t)old_head, (AO_t)new_head);
+}
+
+static void add_segment_to_global_queue(
+	struct PupGCState *state,
+	struct PupRefQueueSegment *segment)
+{
+	while (true) {
+		struct PupRefQueueSegment *head = get_ref_queue_head(state);
+		pup_refqueuesegment_set_next(segment, head);
+		if (compare_and_swap_ref_queue_head(state, head, segment)) {
+			break;
+		}
+	}
+}
+
+static struct PupRefQueueSegment *steal_segment_from_global_queue(
+	struct PupGCState *state
+) {
+	while (true) {
+		struct PupRefQueueSegment *head = get_ref_queue_head(state);
+		if (!head) {
+			return NULL;
+		}
+		if (compare_and_swap_ref_queue_head(state, head, pup_refqueuesegment_get_next(head))) {
+			return head;
+		}
+	}
+}
+
+// TODO: not so pretty,
+static void queue_for_marking(struct PupGCState *state, void **ref,
+                           struct PupRefQueueSegment **ref_queue_segment)
+{
+	if (!*ref_queue_segment) {
+		*ref_queue_segment = pup_refqueuesegment_create();
+	} else if (!pup_refqueueseqment_has_free_space(*ref_queue_segment)) {
+		add_segment_to_global_queue(state, *ref_queue_segment);
+		*ref_queue_segment = pup_refqueuesegment_create();
+	}
+	ABORTF_ON(!*ref_queue_segment, "pup_refqueuesegment_create() failed");
+	pup_refqueuesegment_add(*ref_queue_segment, *ref);
+}
+
+void pup_gc_queue_for_marking(struct PupGCState *state, void **ref)
+{
+	// For use in refqueue.c, within functions called recursively from
+	// collect_stack_root_pointers() (therefore state->current_segment will
+	// have a valid value).
+	queue_for_marking(state, ref, &state->current_segment);
+}
+
+static void collect_stack_root_pointers(struct PupGCState *state,
+                                        unw_cursor_t *cursor,
                                         const struct PupGCSafepoint *safepoint)
 {
+	struct PupRefQueueSegment *current_segment = NULL;
+
 	unw_word_t fp = get_frame_pointer(cursor);
 	if (!fp) {
 		return;
 	}
-	fprintf(stderr, "frame pointer %p\n", (void *)fp);
 	for (int i=0; i<safepoint->live_count; i++) {
 		int fp_offset = safepoint->live_offsets[i];
 		void **root = ((void *)fp) + fp_offset;
-		fprintf(stderr, "  root[%d]=%p ref is %p\n", i, root, *root);
+		queue_for_marking(state, root, &current_segment);
+	}
+	if (current_segment) {
+		add_segment_to_global_queue(state, current_segment);
 	}
 }
 
@@ -114,7 +203,7 @@ static void scan_stack_frame(struct PupGCState *state, unw_cursor_t *cursor)
 	if (!safepoint) {
 		return;
 	}
-	collect_stack_root_pointers(cursor, safepoint);
+	collect_stack_root_pointers(state, cursor, safepoint);
 	return;
 }
 
@@ -134,6 +223,12 @@ void pup_gc_scan_stack(struct PupGCState *state)
 	} while (unw_step(&cursor) > 0);
 }
 
+static void set_live_mark_value(struct PupGCState *state, int mark)
+{
+	AO_store(&state->live_mark_value, mark);
+	ANNOTATE_HAPPENS_BEFORE(&state->live_mark_value);
+}
+
 struct PupGCState *pup_gc_state_create(void)
 {
 	struct PupGCState *state = malloc(sizeof(struct PupGCState));
@@ -143,6 +238,12 @@ struct PupGCState *pup_gc_state_create(void)
 		free(state);
 		return NULL;
 	}
+	set_ref_queue_head(state, NULL);
+	set_live_mark_value(state, 0);
+	// these are initialised in pup_gc_period_start()
+	//state->garbage_count = 0;
+	//state->live_count = 0;
+	state->copy_target = NULL;
 	return state;
 }
 
@@ -150,4 +251,84 @@ void pup_gc_state_destroy(struct PupGCState *state)
 {
 	dlclose(state->dlhandle);
 	free(state);
+}
+
+
+void pup_gc_scan_heap(struct PupGCState *state)
+{
+	int count = 0;
+	struct PupRefQueueSegment *seg;
+	while ((seg = steal_segment_from_global_queue(state)) != NULL) {
+		count++;
+		pup_refqueuesegment_scan(seg, state);
+	}
+	fprintf(stderr, "pup_gc_scan_heap() processed %d segments\n", count);
+}
+
+bool pup_gc_mark_reachable(struct PupGCState *state, struct PupObject *ref)
+{
+	return pup_object_gc_mark(ref, state->live_mark_value);
+}
+
+int pup_gc_get_current_mark(const struct PupGCState *state)
+{
+	ANNOTATE_HAPPENS_AFTER(&state->live_mark_value);
+	// called from mutator thread, therefore atomic
+	return AO_load(&state->live_mark_value);
+}
+
+bool pup_gc_is_live_mark(const struct PupGCState *state, const int mark_value)
+{
+	return pup_gc_get_current_mark(state) == mark_value;
+}
+
+void pup_gc_inc_garbage_count(struct PupGCState *state)
+{
+	state->garbage_count++;
+}
+
+void pup_gc_inc_live_count(struct PupGCState *state)
+{
+	state->live_count++;
+}
+
+void pup_gc_period_start(struct PupGCState *state)
+{
+	state->garbage_count = 0;
+	state->live_count = 0;
+	set_live_mark_value(state, !state->live_mark_value);
+}
+
+void pup_gc_period_end(struct PupGCState *state)
+{
+	fprintf(stderr, "live:%d garbage:%d\n",
+	                state->live_count,
+	                state->garbage_count);
+}
+
+// TODO: deduplicate vs. heap.c thread_local_alloc()
+
+void *pup_gc_alloc_for_copy(struct PupGCState *state,
+                            struct PupHeap *heap,
+                            const size_t size,
+                            const enum PupHeapKind kind)
+{
+	struct PupHeapRegion *region = state->copy_target;
+	ABORTF_ON(!region, "region is NULL");
+	if (!pup_heap_region_have_room_for(region, size)) {
+		// the old region doesn't have the space, so create a new
+		// thread-local region and have the old one added to the global
+		// region list
+		struct PupHeapRegion *old_region = region;
+		region = pup_heap_region_allocate();
+		ABORTF_ON(!region, "pup_heap_region_allocate() failed");
+		state->copy_target = region;
+		pup_heap_add_to_global_heap(heap, old_region);
+	}
+	void *obj = pup_heap_region_make_room_for(region, size, kind);
+	// obj should gain the correct gc_mark when it gets copied
+	// from its current region to *obj, so no
+	// pup_object_gc_mark_unconditionally() call needed here
+	
+	return obj;
 }

@@ -3,8 +3,11 @@ require 'rspec/expectations'
 
 include RSpec::Matchers
 
-# in invocation test.if_true runs the code in "if_true.pup" etc.
+# an invocation of "test.if_true" runs the code in "if_true.pup" etc.
 
+test.gc(:vmlimit=>256) do
+  stdout.should match /success/
+end
 test.while do
   stdout.should match /^\s*success\s+success\s+success\s*$/
 end

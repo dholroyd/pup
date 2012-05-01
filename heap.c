@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -6,13 +7,14 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <signal.h>
+#include <pthread.h>
+#include <time.h>
 #include <atomic_ops.h>
+#include <valgrind/drd.h>
 #include "abortf.h"
 #include "heap.h"
 #include "object.h"
-#include <signal.h>
-#include <semaphore.h>
-#include <time.h>
 #include "gc.h"
 
 #define REGION_SIZE 0x100000
@@ -22,14 +24,20 @@ struct PupHeapRegion {
 	void *region;
 	void *end;
 	void *allocated;
-	struct PupHeapRegion *next;
+	// actually a 'struct PupHeapRegion *',
+	AO_t next;
+	int read_only;
 };
 
 struct PupThreadInfo {
-	int tid;
+	AO_t tid;
 	struct PupHeapRegion *local_region;
-	struct PupThreadInfo *next;
-	int gc_waiting;
+	// actually a 'struct PupThreadInfo *',
+	AO_t next;
+	// these values get modified in signal-handler context, therefore they
+	// are marked volatile,
+	volatile int gc_waiting;
+	volatile int current_gc_mark;
 };
 
 // TODO: optimise HeapObject layout
@@ -39,13 +47,13 @@ struct HeapObject {
 	char data[0];  // actual object data starts from here
 };
 
-static struct PupHeapRegion *allocate_region()
+struct PupHeapRegion *pup_heap_region_allocate(void)
 {
 	struct PupHeapRegion *region = malloc(sizeof(struct PupHeapRegion));
 	if (!region) {
 		return NULL;
 	}
-	region->next = NULL;
+	region->next = 0;
 	// TODO: assert REGION_SIZE is a multiple of page-size
 	region->region = mmap(NULL,
 	                    REGION_SIZE,
@@ -60,6 +68,7 @@ static struct PupHeapRegion *allocate_region()
 	}
 	region->end = region->region + REGION_SIZE;
 	region->allocated = region->region;
+	region->read_only = false;
 	return region;
 }
 
@@ -111,13 +120,32 @@ static int set_local_region(struct PupHeap *heap, struct PupHeapRegion *region)
 	return 0;
 }
 
-static struct PupThreadInfo **find_last_threadinfo(struct PupHeap *heap)
+static struct PupThreadInfo *get_thread_list_head(
+	struct PupHeap *heap
+) {
+	//ANNOTATE_HAPPENS_AFTER(&heap->thread_list);
+	return (struct PupThreadInfo *)AO_load(&heap->thread_list);
+}
+
+static bool swap_thread_list_head(struct PupHeap *heap,
+                                  struct PupThreadInfo *old_head,
+                                  struct PupThreadInfo *new_head)
 {
-	struct PupThreadInfo **last = &heap->thread_list;
-	while(*last) {
-		last = &(*last)->next;
+	return AO_compare_and_swap((AO_t *)&heap->thread_list,
+	                           (AO_t)old_head,
+	                           (AO_t)new_head);
+}
+
+static void attach_thread_to_heap(struct PupHeap *heap,
+                             struct PupThreadInfo *new_head)
+{
+	while (true) {
+		struct PupThreadInfo *old_head
+			= get_thread_list_head(heap);
+		if (swap_thread_list_head(heap, old_head, new_head)) {
+			return;
+		}
 	}
-	return last;
 }
 
 static int attach_thread(struct PupHeap *heap, pthread_t thread)
@@ -126,18 +154,22 @@ static int attach_thread(struct PupHeap *heap, pthread_t thread)
 	if (tinfo == NULL) {
 		return -1;
 	}
-	tinfo->tid = syscall(SYS_gettid);
-	tinfo->next = NULL;
-	tinfo->gc_waiting = 0;
-	struct PupThreadInfo **last = find_last_threadinfo(heap);
-	*last = tinfo;
-	set_thread_info(heap, tinfo);
+	AO_store(&tinfo->tid, thread);
+	ANNOTATE_HAPPENS_BEFORE(&tinfo->tid);
+	AO_store(&tinfo->next, 0);
+	ANNOTATE_HAPPENS_BEFORE(&tinfo->next);
+	tinfo->gc_waiting = false;
+	if (set_thread_info(heap, tinfo)) {
+		return -1;
+	}
+	attach_thread_to_heap(heap, tinfo);
+	ANNOTATE_THREAD_NAME("mutator");
 	return 0;
 }
 
 int pup_heap_thread_init(struct PupHeap *heap)
 {
-	struct PupHeapRegion *region = allocate_region();
+	struct PupHeapRegion *region = pup_heap_region_allocate();
 	if (!region) {
 		return -1;
 	}
@@ -153,11 +185,25 @@ int pup_heap_thread_init(struct PupHeap *heap)
 	return 0;
 }
 
+static void safepoint_barrier_wait(struct PupHeap *heap)
+{
+	int res = pthread_barrier_wait(&heap->safepoint_barrier);
+	ABORTF_ON(res && res!=PTHREAD_BARRIER_SERIAL_THREAD,
+	          "pthread_barrier_wait() failed: %s",
+	          strerror(errno));
+}
+
 static void announce_mutator_arrival(struct PupHeap *heap,
                                      struct PupThreadInfo *tinfo)
 {
-	sem_post(&heap->safepoint_sem);
+	safepoint_barrier_wait(heap);
 	tinfo->gc_waiting = false;
+}
+
+static struct PupGCState *get_gc_state(struct PupHeap *heap)
+{
+	ANNOTATE_HAPPENS_AFTER(&heap->gc_state);
+	return (struct PupGCState *)AO_load((AO_t *)&heap->gc_state);
 }
 
 void pup_heap_safepoint(struct PupHeap *heap)
@@ -167,50 +213,153 @@ void pup_heap_safepoint(struct PupHeap *heap)
 	// this thread, hence we don't use explicit atomic ops or locking
 	// for this access
 	if (tinfo->gc_waiting) {
+		pup_gc_scan_stack(get_gc_state(heap));
 		announce_mutator_arrival(heap, tinfo);
-		pup_gc_scan_stack(heap->gc_state);
 	}
 }
 
-static void await_mutator_arrival(struct PupHeap *heap, struct PupThreadInfo *tinfo)
+static pthread_t get_thread(const struct PupThreadInfo *tinfo)
 {
-	const int seconds = 1;
-	struct timespec abs_timeout;
-	int ret;
+	ANNOTATE_HAPPENS_AFTER(&tinfo->tid);
+	return AO_load(&tinfo->tid);
+}
+
+static void converge_on_safepoint(struct PupHeap *heap,
+                                  struct PupThreadInfo *tinfo)
+{
+	union sigval sv;
+	sv.sival_ptr = heap;
+	pthread_t thread = get_thread(tinfo);
+	fprintf(stderr, "converge_on_safepoint() signalling %p\n", (void *)thread);
+	int ret = pthread_sigqueue(thread, SIGUSR1, sv);
+	ABORTF_ON(ret, "sigqueue() failed: %s", strerror(errno));
+	safepoint_barrier_wait(heap);
+}
+
+static struct PupHeapRegion *global_heap_head(struct PupHeap *heap)
+{
+	return (struct PupHeapRegion *)AO_load((AO_t *)&heap->region_list);
+}
+
+static bool swap_heap_region_head(struct PupHeap *heap,
+                                  struct PupHeapRegion *old_region,
+                                  struct PupHeapRegion *new_region)
+{
+	return AO_compare_and_swap((AO_t *)&heap->region_list,
+	                           (AO_t)old_region,
+	                           (AO_t)new_region);
+}
+
+static struct PupHeapRegion *region_next(struct PupHeapRegion *r)
+{
+	ANNOTATE_HAPPENS_AFTER(&r->next);
+	return (struct PupHeapRegion *)AO_load(&r->next);
+}
+
+static struct PupHeapRegion *steal_heap_region(struct PupHeap *heap)
+{
 	while (true) {
-		clock_gettime(CLOCK_REALTIME, &abs_timeout);
-		abs_timeout.tv_sec += seconds;
-		ret = sem_timedwait(&heap->safepoint_sem, &abs_timeout);
-		if (!ret) break;
-		if (ETIMEDOUT == errno) {
-			fprintf(stderr, "thread %d failed to converge at safepoint after %d seconds\n", tinfo->tid, seconds);
+		struct PupHeapRegion *r
+			= global_heap_head(heap);
+		if (!r) {
+			return NULL;
+		}
+		struct PupHeapRegion *next = region_next(r);
+		if (swap_heap_region_head(heap, r, next)) {
+			return r;
 		}
 	}
 }
 
-static void converge_on_safepoint(struct PupHeap *heap, struct PupThreadInfo *tinfo)
+static void collect_heap_object(struct HeapObject *obj,
+                                struct PupGCState *state)
 {
-	union sigval sv;
-	sv.sival_ptr = heap;
-	fprintf(stderr, "converge_on_safepoint() signalling %d\n", tinfo->tid);
-	int ret = sigqueue(tinfo->tid, SIGUSR1, sv);
-	ABORTF_ON(ret, "sigqueue() failed: %s", strerror(errno));
-	await_mutator_arrival(heap, tinfo);
+	switch (obj->kind) {
+	    case PUP_KIND_OBJ:
+		pup_object_gc_collect((struct PupObject *)obj->data, state);
+		break;
+	    case PUP_KIND_ATTR:
+		pup_object_attr_gc_collect(obj->data, state);
+		break;
+	    default:
+		ABORTF("Unknown object kind %d", obj->kind);
+	}
+}
+static void prevent_mutator_access(struct PupHeap *heap,
+                                   struct PupHeapRegion *region)
+{
+	region->read_only = true;
+	// Prevent mutators being from writing to objects in this region while
+	// we copy the live objects out.  Mutators attempting such writes
+	// will be interrupted with SIGBUS, which we have to handle
+	// TODO: write SIGBUS handling
+	int res = mprotect(region->region,
+	                   region->end - region->region,
+	                   PROT_READ);
+	ABORTF_ON(res, "mprotect failed: %s", strerror(errno));
 }
 
-#define PUP_EACH_GCTHREAD(_heap) \
-	for (struct PupThreadInfo *tinfo=(_heap)->thread_list; \
-	     tinfo; \
-	     tinfo = tinfo->next)
+static void *atomic_region_start(struct PupHeapRegion *region)
+{
+	return (void *)AO_load((AO_t *)&region->region);
+}
+
+static void collect_unmarked_objects_in_region(struct PupHeap *heap,
+                                               struct PupHeapRegion *region)
+{
+	// make sure mutator threads can't alter objects in the process of
+	// being copied
+	// TODO: would it be a win to only if this if we find a live object
+	//       in the region (i.e. there as actually a possibility of
+	//       mutator access)?
+	// FIXME: Where to unprotect the region again?
+	prevent_mutator_access(heap, region);
+
+	void *addr;
+	for (addr=atomic_region_start(region); addr < region->allocated; ) {
+		struct HeapObject *obj = addr;
+		collect_heap_object(obj, get_gc_state(heap));
+		addr += alloc_size_for(obj->object_size);
+	}
+}
+
+static void collect_unmarked_objects(struct PupHeap *heap)
+{
+	struct PupHeapRegion *region;
+	while ((region = steal_heap_region(heap))) {
+		collect_unmarked_objects_in_region(heap, region);
+		// reset the allocation for this region so that no object
+		// freeing will occur,
+		region->allocated = region->region;
+		// release this region's memory,
+		free_region(region);
+	}
+}
+
+static struct PupThreadInfo *threadinfo_next(
+	struct PupThreadInfo *tinfo
+) {
+	ANNOTATE_HAPPENS_AFTER(&tinfo->next);
+	return (struct PupThreadInfo *)AO_load(&tinfo->next);
+}
 
 static void perform_gc(struct PupHeap *heap)
 {
-	PUP_EACH_GCTHREAD(heap) {
-		// FIXME: hack to avoid main thread, which doesn't have
-		// safepoints
-		if (tinfo->tid != getpid())
-			converge_on_safepoint(heap, tinfo);
+	struct PupGCState *gc_state = get_gc_state(heap);
+	pup_gc_period_start(gc_state);
+	for (struct PupThreadInfo *tinfo = get_thread_list_head(heap);
+	     tinfo;
+	     tinfo = threadinfo_next(tinfo))
+	{
+		converge_on_safepoint(heap, tinfo);
 	}
+	// all threads have arrived at a safepoint, scanned their stacks
+	// for 'root' references, and added them to a reference queue, so
+	// now scan the rest of the heap
+	pup_gc_scan_heap(gc_state);
+
+	collect_unmarked_objects(heap);
+	pup_gc_period_end(gc_state);
 }
 
 static void *gc_thread(void *arg)
@@ -220,6 +369,7 @@ static void *gc_thread(void *arg)
 		.tv_sec = 0,
 		.tv_nsec = 500000000
 	};
+	ANNOTATE_THREAD_NAME("garbage-collector");
 	while (1) {
 		int res = nanosleep(&req, NULL);
 		ABORTF_ON(res==EINVAL, "nanosleep() reports invalid timespec");
@@ -277,6 +427,9 @@ static void siguser1_handler(int sig, siginfo_t *si, void *unused)
 	// handler) code in this thread reaches a safepoint, it should notify
 	// the gc thread that this has happened
 	tinfo->gc_waiting = true;
+	// sync the mark value used for thread local allocations with the
+	// current global value
+	tinfo->current_gc_mark = pup_gc_get_current_mark(get_gc_state(heap));
 }
 
 static int setup_signal_handling(struct PupHeap *heap)
@@ -291,6 +444,13 @@ static int setup_signal_handling(struct PupHeap *heap)
 	return 0;
 }
 
+static void set_gc_state(struct PupHeap *heap,
+                         struct PupGCState *gc_state)
+{
+	AO_store((AO_t *)&heap->gc_state, (AO_t)gc_state);
+	ANNOTATE_HAPPENS_BEFORE(&heap->gc_state);
+}
+
 int pup_heap_init(struct PupHeap *heap)
 {
 	fprintf(stderr, "pup_heap_init() pid=%d\n", getpid());
@@ -299,8 +459,7 @@ int pup_heap_init(struct PupHeap *heap)
 	if (res) return res;
 
 	heap->region_list = NULL;
-	heap->thread_list = NULL;
-	heap->gc_state = NULL;
+	heap->thread_list = 0;
 
 	// initialisation for the main thread,
 	res = pup_heap_thread_init(heap);
@@ -310,28 +469,34 @@ int pup_heap_init(struct PupHeap *heap)
 		return res;
 	}
 	res = setup_signal_handling(heap);
+	if (res) {
+		pthread_key_delete(heap->this_thread_info);
+		return res;
+	}
 	res = heap_thread_start(heap);
 	if (res) {
 		pup_heap_thread_destroy(heap);
 		pthread_key_delete(heap->this_thread_info);
 		return res;
 	}
-	res = sem_init(&heap->safepoint_sem, 0, 0);
+	res = pthread_barrier_init(&heap->safepoint_barrier, NULL, 2);
 	// FIXME: proper error handling,
-	ABORTF_ON(res, "pup_heap_init(): sem_init() failed: %s",
+	ABORTF_ON(res, "pthread_barrier_init() failed: %s",
 	               strerror(errno));
-	heap->gc_state = pup_gc_state_create();
+	ANNOTATE_BARRIER_INIT(&heap->safepoint_barrier, 2, false);
+	struct PupGCState *gc_state = pup_gc_state_create();
 	// FIXME: proper error handling,
-	ABORT_ON(!heap->gc_state, "pup_gc_state_create() failed");
+	ABORT_ON(!gc_state, "pup_gc_state_create() failed");
+	set_gc_state(heap, gc_state);
 	return 0;
 }
 
 static void destroy_global_heap(struct PupHeap *heap)
 {
-	struct PupHeapRegion *tail = heap->region_list;
+	struct PupHeapRegion *tail = global_heap_head(heap);
 	while (tail) {
 		struct PupHeapRegion *tmp = tail;
-		tail = tail->next;
+		tail = region_next(tail);
 		free_region(tmp);
 	}
 }
@@ -346,14 +511,14 @@ void pup_heap_destroy(struct PupHeap *heap)
 	}
 }
 
-static int have_room_for(struct PupHeapRegion *region, size_t size)
+bool pup_heap_region_have_room_for(struct PupHeapRegion *region, size_t size)
 {
 	return region->allocated + alloc_size_for(size) <= region->end;
 }
 
-static void *make_room_for(struct PupHeapRegion *region,
-                           size_t size,
-                           enum PupHeapKind kind)
+void *pup_heap_region_make_room_for(struct PupHeapRegion *region,
+                                    const size_t size,
+                                    const enum PupHeapKind kind)
 {
 	void *tmp = region->allocated;
 	region->allocated += alloc_size_for(size);
@@ -363,39 +528,50 @@ static void *make_room_for(struct PupHeapRegion *region,
 	return obj->data;
 }
 
-static void add_to_global_heap(struct PupHeap *heap,
-                               struct PupHeapRegion *region)
+static void set_region_next(struct PupHeapRegion *region,
+                            struct PupHeapRegion *next)
+{
+	AO_store(&region->next, (AO_t)next);
+	ANNOTATE_HAPPENS_BEFORE(&region->next);
+}
+
+void pup_heap_add_to_global_heap(struct PupHeap *heap,
+                                 struct PupHeapRegion *region)
 {
 	int limit = 1000;
-	while (1) {
-		struct PupHeapRegion *old_head =
-			(struct PupHeapRegion *)AO_load((AO_t *)&heap->region_list);
-		region->next = old_head;
-		if (AO_compare_and_swap((AO_t *)&heap->region_list, (AO_t)old_head, (AO_t)region)) {
+	while (true) {
+		struct PupHeapRegion *old_head = global_heap_head(heap);
+		set_region_next(region, old_head);
+		if (swap_heap_region_head(heap, old_head, region)) {
 			return;
 		}
 		ABORTF_ON(!--limit, "failed to update heap->region_list after 1000 iterations");
 	}
 }
 
+
 static void *thread_local_alloc(struct PupHeap *heap, size_t size, enum PupHeapKind kind)
 {
-	struct PupHeapRegion *region = get_thread_info(heap)->local_region;
-	if (!have_room_for(region, size)) {
+	struct PupThreadInfo *tinfo = get_thread_info(heap);
+	struct PupHeapRegion *region = tinfo->local_region;
+	if (!pup_heap_region_have_room_for(region, size)) {
 		// the old region doesn't have the space, so create a new
 		// thread-local region and have the old one added to the global
 		// region list
 		struct PupHeapRegion *old_region = region;
-		region = allocate_region();
+		region = pup_heap_region_allocate();
 		if (!region) {
 			// TODO raise a pup exception or somesuch,
-			ABORTF("allocate_region() failed");
+			ABORTF("pup_heap_region_allocate() failed");
 		}
 		int res = set_local_region(heap, region);
 		ABORTF_ON(res, "set_local_region() failed with %d", res);
-		add_to_global_heap(heap, old_region);
+		pup_heap_add_to_global_heap(heap, old_region);
 	}
-	return make_room_for(region, size, kind);
+	void *obj = pup_heap_region_make_room_for(region, size, kind);
+	pup_object_gc_mark_unconditionally((struct PupObject *)obj,
+	                                   tinfo->current_gc_mark);
+	return obj;
 }
 
 static int is_large_object(size_t size)
@@ -410,3 +586,15 @@ void *pup_heap_alloc(struct PupHeap *heap, size_t size, enum PupHeapKind kind)
 	}
 	return thread_local_alloc(heap, size, kind);
 }
+
+void *pup_heap_alloc_for_gc_copy(struct PupHeap *heap,
+                                 size_t size,
+                                 enum PupHeapKind kind)
+{
+	if (is_large_object(size)) {
+		ABORTF("Large object allocator not implemented yet! (%ld bytes)", size);
+	}
+	return pup_gc_alloc_for_copy(get_gc_state(heap), heap, size, kind);
+}
+
+

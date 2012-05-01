@@ -23,6 +23,7 @@ struct PupClass {
 	struct PupClass *scope;  /* for Constant lookup */
 	struct PupObject *(*allocate_instance)(ENV, struct PupClass *);  /* hax: until we have instance methods */
 	void (*destroy_instance)(struct PupObject *);
+	struct PupObject *(*gc_copy_instance)(ENV, const struct PupObject *);
 };
 
 void pup_internal_class_init(ENV,
@@ -31,7 +32,8 @@ void pup_internal_class_init(ENV,
                              struct PupClass *scope,
                              const char *name,
                              struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
-                             void (*destroy_instance)(struct PupObject *))
+                             void (*destroy_instance)(struct PupObject *),
+                             struct PupObject *(*gc_copy_instance)(ENV, const struct PupObject *))
 {
 	ABORTF_ON(!name, "'name' must not ne null");
 	ABORTF_ON(!allocate_instance, "'allocate_instance' must not ne null");
@@ -41,6 +43,7 @@ void pup_internal_class_init(ENV,
 	class->scope = scope;
 	class->allocate_instance = allocate_instance;
 	class->destroy_instance = destroy_instance;
+	class->gc_copy_instance = gc_copy_instance;
 }
 
 struct PupClass *pup_internal_create_class(ENV,
@@ -48,7 +51,8 @@ struct PupClass *pup_internal_create_class(ENV,
                                            struct PupClass *scope,
                                            const char *name,
                                            struct PupObject *(*allocate_instance)(ENV, struct PupClass *),
-                                           void (*destroy_instance)(struct PupObject *))
+                                           void (*destroy_instance)(struct PupObject *),
+                                           struct PupObject *(*gc_copy_instance)(ENV, const struct PupObject *))
 {
 	ABORTF_ON(!superclass, "'superclass' must not be NULL when creating class %s", name);
 	ABORTF_ON(!allocate_instance, "'allocate_instance' must not be NULL when creating class %s", name);
@@ -57,7 +61,7 @@ struct PupClass *pup_internal_create_class(ENV,
 	                                 pup_env_str_to_sym(env, "new"),
 	                                 0, NULL);
 	struct PupClass *class = (struct PupClass *)o;
-	pup_internal_class_init(env, class, superclass, scope, name, allocate_instance, destroy_instance);
+	pup_internal_class_init(env, class, superclass, scope, name, allocate_instance, destroy_instance, gc_copy_instance);
 	return class;
 }
 
@@ -71,7 +75,8 @@ struct PupClass *pup_create_class(ENV,
 	                                 scope,
 	                                 name,
 	                                 &pup_object_allocate_instance,
-	                                 &pup_object_destroy_instance);
+	                                 &pup_object_destroy_instance,
+	                                 &pup_object_gc_copy_instance);
 }
 
 // TODO: a name better differentiated from pup_class_allocate_instance()
@@ -100,6 +105,17 @@ void pup_internal_class_destroy_instance(struct PupObject *obj)
 	pup_object_destroy_instance(obj);
 }
 
+struct PupObject *pup_internal_class_gc_copy_instance(
+	ENV,
+	const struct PupObject *obj
+) {
+	struct PupObject *new_obj =
+		(struct PupObject *)pup_env_alloc_attr_for_gc_copy(env, sizeof(struct PupClass));
+	memcpy(new_obj, obj, sizeof(struct PupClass));
+	// FIXME: must copy attrs too!
+	return new_obj;
+}
+
 
 struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_object)
 {
@@ -107,7 +123,8 @@ struct PupClass *pup_bootstrap_create_classclass(ENV, struct PupClass *class_obj
 		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
 	pup_internal_class_init(env, class, class_object, class_object, "Class",
 	                        &pup_internal_class_allocate_instance,
-	                        &pup_internal_class_destroy_instance);
+	                        &pup_internal_class_destroy_instance,
+	                        &pup_internal_class_gc_copy_instance);
 	return class;
 }
 
@@ -175,7 +192,8 @@ bool pup_is_descendant_or_same(const struct PupClass *ancestor,
 {
 	ABORT_ON(!ancestor, "ancestor must not be NULL");
 	ABORT_ON(!descendant, "descendant must not be NULL");
-	for (const struct PupClass *next = descendant; next; next=next->superclass) {
+	const struct PupClass *next;
+	for (next = descendant; next; next=next->superclass) {
 		if (next == ancestor) {
 			return true;
 		}
@@ -246,6 +264,13 @@ void pup_class_free(struct PupClass *class)
 void pup_class_destroy_instance(struct PupClass *class, struct PupObject *obj)
 {
 	class->destroy_instance(obj);
+}
+
+void pup_class_gc_copy_instance(struct PupClass *class,
+                                ENV,
+                                const struct PupObject *obj)
+{
+	class->gc_copy_instance(env, obj);
 }
 
 METH_IMPL(pup_class_new)

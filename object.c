@@ -23,7 +23,8 @@ struct PupClass *pup_bootstrap_create_classobject(ENV)
 		(struct PupClass *)pup_internal_class_allocate_instance(env, NULL);
 	pup_internal_class_init(env, class, NULL, NULL, "Object",
 	                        &pup_object_allocate_instance,
-	                        &pup_object_destroy_instance);
+	                        &pup_object_destroy_instance,
+	                        &pup_object_gc_copy_instance);
 	return class;
 }
 
@@ -31,6 +32,8 @@ void obj_init(struct PupObject *obj, struct PupClass *type)
 {
 	obj->type = type;
 	obj->attr_list_head = NULL;
+	// would make sense to initialise gc_mark here too, however heap.c
+	// should have already done it
 }
 
 METH_IMPL(pup_object_allocate)
@@ -48,6 +51,45 @@ struct PupObject *pup_object_allocate_instance(ENV, struct PupClass *type)
 void pup_object_destroy_instance(struct PupObject *obj)
 {
 	// nothing do do
+}
+
+static void attr_init(struct PupAttributeListEntry *attr,
+                      const int sym,
+                      struct PupObject *val,
+                      struct PupAttributeListEntry *next)
+{
+	attr->name_sym = sym;
+	attr->value = val;
+	attr->next = next;
+}
+
+static struct PupAttributeListEntry *copy_attr(
+	ENV,
+	const struct PupAttributeListEntry *attr
+) {
+	struct PupAttributeListEntry *new_attr
+		= pup_env_alloc_attr_for_gc_copy(env, sizeof(struct PupAttributeListEntry));
+	attr_init(new_attr, attr->name_sym, attr->value, NULL);
+	return new_attr;
+}
+
+struct PupObject *pup_object_gc_copy_instance(ENV, const struct PupObject *obj)
+{
+	struct PupObject *new_obj
+		= pup_env_alloc_obj_for_gc_copy(env, sizeof(struct PupObject));
+	memcpy(new_obj, obj, sizeof(struct PupObject));
+	// TODO: update references in the copy if we already know that
+	// referenced region was already moved?
+
+	// copy attributes of the object too,
+	struct PupAttributeListEntry *attr = obj->attr_list_head;
+	struct PupAttributeListEntry **target = &new_obj->attr_list_head;
+	while (attr) {
+		*target = copy_attr(env, attr);
+		target = &(*target)->next;
+		attr = attr->next;
+	}
+	return new_obj;
 }
 
 struct PupObject *pup_create_object(ENV, struct PupClass *type)
@@ -157,9 +199,7 @@ static struct PupAttributeListEntry *create_attr(ENV, const int sym,
 {
 	struct PupAttributeListEntry *attr
 		= pup_alloc_attr(env, sizeof(struct PupAttributeListEntry));
-	attr->name_sym = sym;
-	attr->value = val;
-	attr->next = next;
+	attr_init(attr, sym, val, next);
 	return attr;
 }
 
@@ -183,6 +223,54 @@ struct PupObject *pup_iv_get(struct PupObject *obj, const int sym)
 		return attr->value;
 	}
 	return NULL;  /* TODO nil */
+}
+
+void pup_object_each_ref(struct PupObject *obj,
+                         void (*visitor)(struct PupObject **, void *),
+                         void *data)
+{
+	// FIXME: must defer to a per-type function that can e.g. handle
+	// superclass field if obj is a Class etc.
+	visitor((struct PupObject **)&obj->type, data);
+	struct PupAttributeListEntry *attr = obj->attr_list_head;
+	while (attr) {
+		visitor(&attr->value, data);
+		attr = attr->next;
+	}
+}
+
+bool pup_object_gc_mark(struct PupObject *obj, int mark_value)
+{
+	if (obj->gc_mark != mark_value) {
+		obj->gc_mark = mark_value;
+		return true;
+	}
+	return false;
+}
+
+void pup_object_gc_mark_unconditionally(struct PupObject *obj, int mark_value)
+{
+	obj->gc_mark = mark_value;
+}
+
+static void copy_live_object(struct PupObject *obj, struct PupGCState *state)
+{
+	void *alloc_obj_for_copy();
+}
+
+void pup_object_gc_collect(struct PupObject *obj, struct PupGCState *state)
+{
+	if (pup_gc_is_live_mark(state, obj->gc_mark)) {
+		pup_gc_inc_live_count(state);
+		copy_live_object(obj, state);
+	} else {
+		pup_gc_inc_garbage_count(state);
+	}
+}
+
+void pup_object_attr_gc_collect(void *attr, struct PupGCState *state)
+{
+	fprintf(stderr, "GC: attr %p\n", attr);
 }
 
 /*
