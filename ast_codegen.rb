@@ -96,6 +96,8 @@ class AssignExpr
     case left
       when NameExpr
 	codegen_local(ctx)
+      when InstVarExpr
+	codegen_instance(ctx)
       else
 	raise "unhandled lhs: #{left.class.name}"
     end
@@ -105,6 +107,13 @@ class AssignExpr
     lhs = ctx.current_method.get_or_create_local(left.name)
     rhs = right.codegen(ctx)
     ctx.build.store(rhs, lhs)
+    rhs
+  end
+
+  def codegen_instance(ctx)
+    rhs = right.codegen(ctx)
+    ctx.build_call.pup_iv_set(ctx.current_method.env, ctx.self_ref,
+                              ctx.mk_sym(left.name), rhs)
     rhs
   end
 end
@@ -142,6 +151,13 @@ class VarOrInvokeExpr
 
     arg_list = @args ? @args.map {|a| a.codegen(ctx) } : []
     ctx.build_method_invocation(r, name.name, *arg_list)
+  end
+end
+
+class InstVarExpr
+  def codegen(ctx)
+    ctx.build_call.pup_iv_get(ctx.self_ref,
+                              ctx.mk_sym(name))
   end
 end
 

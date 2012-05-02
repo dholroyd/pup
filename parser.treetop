@@ -166,14 +166,19 @@ grammar Pup
     / ">>="
   end
 
-  rule left_hand_side
+  rule lhs_stem
     thename
+    / instvar
+  end
+
+  rule left_hand_side
+    lhs_stem
     (
       '.' invoke
       /
       '[' expression ']'
     )+
-    / thename
+    / lhs_stem
   end
 
   rule conditional
@@ -285,6 +290,7 @@ grammar Pup
     / bool
     / quoted_string
     / invoke
+    / instvar
   end
 
   rule parenthesis
@@ -428,6 +434,14 @@ grammar Pup
     [a-z_] [A-Za-z_0-9]* {
       def value
 	NameExpr.new(text_value)
+      end
+    }
+  end
+
+  rule instvar
+    "@" [a-z_] [A-Za-z_0-9]* {
+      def value
+	InstVarExpr.new(text_value)
       end
     }
   end

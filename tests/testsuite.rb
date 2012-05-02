@@ -5,6 +5,9 @@ include RSpec::Matchers
 
 # an invocation of "test.if_true" runs the code in "if_true.pup" etc.
 
+test.attr do
+  stdout.should match /success/
+end
 test.gc(:vmlimit=>256) do
   stdout.should match /success/
 end

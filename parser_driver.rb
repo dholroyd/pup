@@ -103,6 +103,13 @@ class NameExpr < AST
   end
 end
 
+class InstVarExpr < AST
+  attr_reader :name
+  def initialize(name)
+    @name = name
+  end
+end
+
 class ConstantNameExpr < AST
   attr_reader :name
   def initialize(name)

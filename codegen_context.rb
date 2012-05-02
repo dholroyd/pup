@@ -46,7 +46,7 @@ class CodegenContext
 
   def global_string_constant(value, name=nil)
     str = LLVM::ConstantArray.string(value)
-    name = "str#{value}" unless name
+    name = "str#{value.gsub(/@/, "_")}" unless name
     global_constant(str, str, name).bit_cast(CStrType)
   end
 
