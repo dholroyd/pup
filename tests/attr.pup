@@ -1,0 +1,13 @@
+class Test
+  def one
+    @a = "success"
+  end
+
+  def two
+    puts @a
+  end
+end
+
+t = Test.new
+t.one
+t.two
