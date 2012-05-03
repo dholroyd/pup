@@ -271,6 +271,7 @@ class MethodDef
       ctx.append_block do
 	ctx.with_builder_at_end do
 	  if body
+            codegen_args(ctx, meth) if params
 	    ret = body.codegen(ctx)
 	    ctx.build.ret(ret)
 	  else
@@ -282,6 +283,19 @@ class MethodDef
     end
     #hopefully_a_class = class_context(ctx)
     ctx.runtime_builder.call_define_method(ctx.self_ref, ctx.mk_sym(name.name), fn)
+  end
+
+  def codegen_args(ctx, meth)
+    # FIXME: check meth.param_argc vs. params.size
+    # TODO: copying references that already exist in argv is inefficient,
+    #       but means directly reusing get_or_create_local() without having
+    #       to think too much.  Do better than this.
+    params.each_with_index do |a, i|
+      var = meth.get_or_create_local(a.name.name)
+      argp = ctx.build.gep(meth.param_argv, [LLVM.Int(i)])
+      arg = ctx.build.load(argp)
+      ctx.build.store(arg, var)
+    end
   end
 
   def class_context(ctx)

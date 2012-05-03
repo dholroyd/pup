@@ -1,0 +1,10 @@
+class T
+  def test(msg)
+    puts msg
+  end
+end
+begin
+  T.new.test("success")
+rescue => e
+  puts e.message
+end
