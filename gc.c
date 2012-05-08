@@ -233,8 +233,8 @@ struct PupGCState *pup_gc_state_create(void)
 {
 	struct PupGCState *state = malloc(sizeof(struct PupGCState));
 	if (!state) return NULL;
-	void *dlhandle = dlopen(NULL, RTLD_LAZY);
-	if (!dlhandle) {
+	state->dlhandle = dlopen(NULL, RTLD_LAZY);
+	if (!state->dlhandle) {
 		free(state);
 		return NULL;
 	}
