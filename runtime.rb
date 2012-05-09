@@ -43,7 +43,7 @@ class RuntimeBuilder
 	[LLVM::Int8.type.pointer],
 	LLVM.Void],
       ["pup_create_class",
-	[EnvPtrType, ClassType.pointer, ClassType.pointer, ClassType.pointer, CStrType],
+	[EnvPtrType, ClassType.pointer, ClassType.pointer, CStrType],
 	ClassType.pointer],
       ["pup_define_method",
 	[ClassType.pointer, LLVM::Int, MethodPtrType],

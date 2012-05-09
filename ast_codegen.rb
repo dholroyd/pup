@@ -237,7 +237,6 @@ class ClassDef
     ctx.eval_build do
       self_class = ctx.build_call.pup_class_context_from(ctx.current_method.env, ctx.self_ref, "self_class")
       classdef = ctx.build_call.pup_create_class(ctx.current_method.env, 
-                      ctx.build_call.pup_env_get_classclass(ctx.current_method.env),
 		      superclass_ref,
                       self_class,
 		      class_name_ref,
