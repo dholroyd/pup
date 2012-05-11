@@ -1,9 +1,6 @@
 
 #include <stdlib.h>
-
-struct RuntimeEnv;
-
-#define ENV struct RuntimeEnv *env
+#include "core_types.h"
 
 void pup_runtime_env_destroy(struct RuntimeEnv *env);
 struct RuntimeEnv *pup_runtime_env_create();
